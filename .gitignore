@@ -1,3 +1,4 @@
 .vscode/
 venv39/
 data/
+__pycache__/
