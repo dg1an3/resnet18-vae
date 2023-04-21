@@ -62,14 +62,12 @@ def make_oriented_map(
     """
     xs, ys = make_meshgrid(sz=kernel_size)
     phi = (5**0.5 + 1) / 2  # golden ratio
-    freqs = [phi**n for n in range(2, -3, -1)]
+    freqs = [phi**n for n in range(3, -2, -1)]
     kernels_complex = (list)(
         make_gabor_bank(xs, ys, directions=directions, freqs=freqs)
     )
 
     if dstack_phases:
-        raise("Not Implemented")
-        #
         conv = nn.Conv2d(
             inplanes,
             len(kernels_complex) * 2,
@@ -86,6 +84,7 @@ def make_oriented_map(
 
         conv.weight = torch.nn.Parameter(kernels2weights(stacked_weights, inplanes))
 
+        raise("Not Implemented")
         return len(kernels_complex) * 2, conv
     else:
         #

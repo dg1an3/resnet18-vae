@@ -2,3 +2,4 @@
 venv39/
 data/
 __pycache__/
+weights/
