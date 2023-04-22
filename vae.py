@@ -43,6 +43,26 @@ class VAE(nn.Module):
         """
         super(VAE, self).__init__()
 
+        # prepare the STN preprocessor
+        #
+        self.localization = nn.Sequential(
+            nn.Conv2d(1, 8, kernel_size=7),
+            nn.MaxPool2d(2, stride=2),
+            nn.ReLU(True),
+            nn.Conv2d(8, 10, kernel_size=5),
+            nn.MaxPool2d(2, stride=2),
+            nn.ReLU(True),
+        )
+        self.fc_loc = nn.Sequential(
+            nn.Linear(10 * 108 * 108, 32), nn.ReLU(True), nn.Linear(32, 3 * 2)
+        )
+
+        # Initialize the weights/bias with identity transformation
+        self.fc_loc[2].weight.data.zero_()
+        self.fc_loc[2].bias.data.copy_(
+            torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
+        )
+
         self.input_size = input_size
         self.latent_dim = latent_dim
 
@@ -60,6 +80,28 @@ class VAE(nn.Module):
             out_channels=input_size[0],
             final_kernel_size=init_kernel_size,
         )
+
+    def stn(self, x):
+        """Spatial transformer network forward function
+
+        Args:
+            x (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        # print(x.shape)
+        xs = self.localization(x)
+        # print(xs.shape)
+        xs = xs.view(-1, 10 * 108 * 108)
+        # print(xs.shape)
+        theta = self.fc_loc(xs)
+        theta = theta.view(-1, 2, 3)
+
+        grid = F.affine_grid(theta, x.size())
+        x = F.grid_sample(x, grid)
+
+        return x
 
     def reparameterize(self, mu, log_var):
         """_summary_
@@ -84,6 +126,9 @@ class VAE(nn.Module):
         Returns:
             _type_: _description_
         """
+        # first apply the transform
+        x = self.stn(x)
+
         mu, log_var = self.encoder(x)
         z = self.reparameterize(mu, log_var)
         x_recon = self.decoder(z)
