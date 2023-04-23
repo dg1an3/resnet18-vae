@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchinfo import summary
 
+from filter_utils import make_oriented_map
+
 from encoder import Encoder
 from decoder import Decoder
 
@@ -45,16 +47,49 @@ class VAE(nn.Module):
 
         # prepare the STN preprocessor
         #
+        directions = 7
+        kernel_count, weights_real, weights_imag = make_oriented_map(
+            inplanes=input_size[0],
+            kernel_size=init_kernel_size,
+            directions=directions,
+            stride=1,
+        )
+
+        self.conv_real = nn.Conv2d(
+            input_size[0],
+            kernel_count,
+            kernel_size=init_kernel_size,
+            stride=1,
+            padding=init_kernel_size // 2,
+            bias=False,
+        )
+        self.conv_real.weight = torch.nn.Parameter(
+            weights_real, requires_grad=False
+        )
+
+        self.conv_imag = nn.Conv2d(
+            input_size[0],
+            kernel_count,
+            kernel_size=init_kernel_size,
+            stride=1,
+            padding=init_kernel_size // 2,
+            bias=False,
+        )
+        self.conv_imag.weight = torch.nn.Parameter(
+            weights_imag, requires_grad=False
+        )
+         
+        self.use_abs = False
         self.localization = nn.Sequential(
-            nn.Conv2d(1, 8, kernel_size=7),
+            # nn.Conv2d(1, 8, kernel_size=7),
             nn.MaxPool2d(2, stride=2),
             nn.ReLU(True),
-            nn.Conv2d(8, 10, kernel_size=5),
+            nn.Conv2d(kernel_count, 10, kernel_size=5),
             nn.MaxPool2d(2, stride=2),
             nn.ReLU(True),
         )
         self.fc_loc = nn.Sequential(
-            nn.Linear(10 * 108 * 108, 32), nn.ReLU(True), nn.Linear(32, 3 * 2)
+            nn.Linear(10 * 110 * 110, 32), nn.ReLU(True), nn.Linear(32, 3 * 2)
         )
 
         # Initialize the weights/bias with identity transformation
@@ -90,10 +125,15 @@ class VAE(nn.Module):
         Returns:
             _type_: _description_
         """
-        # print(x.shape)
-        xs = self.localization(x)
-        # print(xs.shape)
-        xs = xs.view(-1, 10 * 108 * 108)
+        print(x.shape)
+
+        x_ = self.conv_real(x) ** 2 + self.conv_imag(x) ** 2
+        print(x_.shape)
+        if self.use_abs:
+            x_ = torch.sqrt(x_)
+        xs = self.localization(x_)
+        print(xs.shape)
+        xs = xs.view(-1, 10 *110 * 110)
         # print(xs.shape)
         theta = self.fc_loc(xs)
         theta = theta.view(-1, 2, 3)
