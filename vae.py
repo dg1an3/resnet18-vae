@@ -27,8 +27,10 @@ def vae_loss(recon_x, x, mu, log_var, recon_loss_metric="l1_loss", beta=1.0):
         recon_loss = F.binary_cross_entropy(recon_x, x, reduction="mean")
     elif recon_loss_metric == "l1_loss":
         recon_loss = F.l1_loss(recon_x, x)
-    elif recon_loss_metric == "mse" or recon_loss_metric != "":
-        recon_loss = F.mse(recon_x, x)
+    elif recon_loss_metric == "mse_loss":
+        recon_loss = F.mse_loss(recon_x, x)
+    else:
+        raise("Unrecognized loss metric")
 
     kld_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
     return recon_loss, kld_loss, recon_loss + beta * kld_loss
