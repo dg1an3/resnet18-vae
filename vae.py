@@ -48,7 +48,8 @@ class VAE(nn.Module):
         super(VAE, self).__init__()
 
         # prepare the STN preprocessor
-        #
+        # TODO: separate STN in to its own module, so it can be invoked on inputs to: 
+        #           calculate xform and lut; and apply transform and lut to inputs
         directions = 7
         kernel_count, weights_real, weights_imag = make_oriented_map(
             inplanes=input_size[0],
@@ -100,6 +101,14 @@ class VAE(nn.Module):
             torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
         )
 
+        self.fc_lut = nn.Sequential(
+            nn.Linear(10 * 110 * 110, 32), nn.ReLU(True), nn.Linear(32, 1)
+        )
+        self.fc_lut[2].weight.data.zero_()
+        self.fc_lut[2].bias.data.copy_(
+            torch.tensor([1], dtype=torch.float)
+        )
+
         self.input_size = input_size
         self.latent_dim = latent_dim
 
@@ -117,7 +126,7 @@ class VAE(nn.Module):
             out_channels=input_size[0],
             final_kernel_size=init_kernel_size,
         )
-
+    
     def stn(self, x):
         """Spatial transformer network forward function
 
@@ -127,19 +136,33 @@ class VAE(nn.Module):
         Returns:
             _type_: _description_
         """
-        print(x.shape)
+        # print(x.shape)
 
-        x_ = self.conv_real(x) ** 2 + self.conv_imag(x) ** 2
-        print(x_.shape)
+        x_prime = self.conv_real(x) ** 2 + self.conv_imag(x) ** 2
+        # print(x_prime.shape)
+
         if self.use_abs:
-            x_ = torch.sqrt(x_)
-        xs = self.localization(x_)
-        print(xs.shape)
-        xs = xs.view(-1, 10 *110 * 110)
+            x_prime = torch.sqrt(x_prime)
+
+        xs = self.localization(x_prime)
+        # print(xs.shape)
+
+        xs = xs.view(-1, 10 * 110 * 110)
         # print(xs.shape)
         theta = self.fc_loc(xs)
         theta = theta.view(-1, 2, 3)
 
+        # now apply LUT
+        lut_param = self.fc_lut(xs)
+        lut_param = lut_param.view(-1,1)
+        lut_param = torch.exp(lut_param)        
+        lut_param = lut_param.reshape(-1,1,1,1)
+        print(lut_param.shape)
+        print(x.shape)
+
+        x = torch.pow(x, lut_param)
+
+        # and apply 
         grid = F.affine_grid(theta, x.size())
         x = F.grid_sample(x, grid)
 
