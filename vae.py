@@ -47,67 +47,94 @@ class VAE(nn.Module):
         """
         super(VAE, self).__init__()
 
-        # prepare the STN preprocessor
-        # TODO: separate STN in to its own module, so it can be invoked on inputs to: 
-        #           calculate xform and lut; and apply transform and lut to inputs
-        directions = 7
-        kernel_count, weights_real, weights_imag = make_oriented_map(
-            inplanes=input_size[0],
-            kernel_size=init_kernel_size,
-            directions=directions,
-            stride=1,
+        self.use_ori_pyr_stn = True
+        if self.use_ori_pyr_stn:
+            # prepare the STN preprocessor
+            # TODO: separate STN in to its own module, so it can be invoked on inputs to: 
+            #           calculate xform and lut; and apply transform and lut to inputs
+            directions = 7
+            kernel_count, weights_real, weights_imag = make_oriented_map(
+                inplanes=input_size[0],
+                kernel_size=init_kernel_size,
+                directions=directions,
+                stride=1,
+            )
+
+            self.conv_real = nn.Conv2d(
+                input_size[0],
+                kernel_count,
+                kernel_size=init_kernel_size,
+                stride=1,
+                padding=init_kernel_size // 2,
+                bias=False,
+            )
+            self.conv_real.weight = torch.nn.Parameter(
+                weights_real, requires_grad=False
+            )
+
+            self.conv_imag = nn.Conv2d(
+                input_size[0],
+                kernel_count,
+                kernel_size=init_kernel_size,
+                stride=1,
+                padding=init_kernel_size // 2,
+                bias=False,
+            )
+            self.conv_imag.weight = torch.nn.Parameter(
+                weights_imag, requires_grad=False
+            )
+            
+            self.use_abs = False
+            self.localization = nn.Sequential(
+                nn.Conv2d(kernel_count, 8, kernel_size=1),
+                nn.MaxPool2d(2, stride=2),
+                nn.ReLU(True),
+                nn.Conv2d(8, 10, kernel_size=5),
+                nn.MaxPool2d(2, stride=2),
+                nn.ReLU(True),
+            )
+
+            self.output_size = 110
+        else:
+            self.localization = nn.Sequential(
+                nn.Conv2d(1, 8, kernel_size=7),
+                nn.MaxPool2d(2, stride=2),
+                nn.ReLU(True),
+                nn.Conv2d(8, 10, kernel_size=5),
+                nn.MaxPool2d(2, stride=2),
+                nn.ReLU(True),
+            )
+            self.output_size = 108
+        
+        self.fc_rot = nn.Sequential(
+            nn.Linear(10 * self.output_size * self.output_size, 32),
+            nn.ReLU(True), nn.Linear(32, 1)
         )
 
-        self.conv_real = nn.Conv2d(
-            input_size[0],
-            kernel_count,
-            kernel_size=init_kernel_size,
-            stride=1,
-            padding=init_kernel_size // 2,
-            bias=False,
-        )
-        self.conv_real.weight = torch.nn.Parameter(
-            weights_real, requires_grad=False
+        self.fc_xlate = nn.Sequential(
+            nn.Linear(10 * self.output_size * self.output_size, 32),
+            nn.ReLU(True), nn.Linear(32, 2)
         )
 
-        self.conv_imag = nn.Conv2d(
-            input_size[0],
-            kernel_count,
-            kernel_size=init_kernel_size,
-            stride=1,
-            padding=init_kernel_size // 2,
-            bias=False,
-        )
-        self.conv_imag.weight = torch.nn.Parameter(
-            weights_imag, requires_grad=False
-        )
-         
-        self.use_abs = False
-        self.localization = nn.Sequential(
-            # nn.Conv2d(1, 8, kernel_size=7),
-            nn.MaxPool2d(2, stride=2),
-            nn.ReLU(True),
-            nn.Conv2d(kernel_count, 10, kernel_size=5),
-            nn.MaxPool2d(2, stride=2),
-            nn.ReLU(True),
-        )
         self.fc_loc = nn.Sequential(
-            nn.Linear(10 * 110 * 110, 32), nn.ReLU(True), nn.Linear(32, 3 * 2)
+            nn.Linear(10 * self.output_size * self.output_size, 32),
+            nn.ReLU(True), nn.Linear(32, 3 * 2)
         )
 
         # Initialize the weights/bias with identity transformation
-        self.fc_loc[2].weight.data.zero_()
+        nn.init.normal_(self.fc_loc[2].weight, mean=0.0, std=1e-4)
         self.fc_loc[2].bias.data.copy_(
             torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
         )
 
         self.fc_lut = nn.Sequential(
-            nn.Linear(10 * 110 * 110, 32), nn.ReLU(True), nn.Linear(32, 1)
+            nn.Linear(10 * self.output_size * self.output_size, 32, bias=False),
+            nn.ReLU(True), nn.Linear(32, 1)
         )
-        self.fc_lut[2].weight.data.zero_()
-        self.fc_lut[2].bias.data.copy_(
-            torch.tensor([1], dtype=torch.float)
-        )
+        nn.init.normal_(self.fc_lut[2].weight, mean=0.0, std=1e-8)
+        # self.fc_lut[2].bias.data.copy_(
+        #     torch.tensor([0], dtype=torch.float)
+        # )
 
         self.input_size = input_size
         self.latent_dim = latent_dim
@@ -127,6 +154,47 @@ class VAE(nn.Module):
             final_kernel_size=init_kernel_size,
         )
     
+    def stn_grid_lut(self, x):
+        """_summary_
+
+        Args:
+            x (_type_): _description_
+        """
+        # print(x.shape)
+
+        if self.use_ori_pyr_stn:
+            x_prime = self.conv_real(x) ** 2 + self.conv_imag(x) ** 2
+            # print(x_prime.shape)
+
+            if self.use_abs:
+                x_prime = torch.sqrt(x_prime)
+        else:
+            x_prime = x
+
+        xs = self.localization(x_prime)
+        # print(xs.shape)
+
+        xs = xs.view(-1, 10 * self.output_size * self.output_size)
+
+        angle = self.fc_rot(xs)
+        s = torch.sin(angle)
+        c = torch.cos(angle)
+        
+        xlate = self.fc_xlate(xs)
+        
+        # now compute the fully connected localization and LUT parameters
+        theta = self.fc_loc(xs)
+        theta = theta.view(-1, 2, 3)
+
+        # now apply LUT
+        lut_param = self.fc_lut(xs)
+        lut_param = lut_param.view(-1,1)
+        lut_param = torch.exp(lut_param)
+        lut_param = lut_param.reshape(-1,1,1,1)
+        # print(lut_param.shape)
+
+        return theta, lut_param
+
     def stn(self, x):
         """Spatial transformer network forward function
 
@@ -136,37 +204,16 @@ class VAE(nn.Module):
         Returns:
             _type_: _description_
         """
-        # print(x.shape)
+        theta, lut_param = self.stn_grid_lut(x)
 
-        x_prime = self.conv_real(x) ** 2 + self.conv_imag(x) ** 2
-        # print(x_prime.shape)
+        # apply LUT to input
+        # x = torch.pow(x, lut_param)
 
-        if self.use_abs:
-            x_prime = torch.sqrt(x_prime)
+        # apply transform to input
+        grid = F.affine_grid(theta, x.size(), align_corners=False)
+        x = F.grid_sample(x, grid, padding_mode="zeros")
 
-        xs = self.localization(x_prime)
-        # print(xs.shape)
-
-        xs = xs.view(-1, 10 * 110 * 110)
-        # print(xs.shape)
-        theta = self.fc_loc(xs)
-        theta = theta.view(-1, 2, 3)
-
-        # now apply LUT
-        lut_param = self.fc_lut(xs)
-        lut_param = lut_param.view(-1,1)
-        lut_param = torch.exp(lut_param)        
-        lut_param = lut_param.reshape(-1,1,1,1)
-        print(lut_param.shape)
-        print(x.shape)
-
-        x = torch.pow(x, lut_param)
-
-        # and apply 
-        grid = F.affine_grid(theta, x.size())
-        x = F.grid_sample(x, grid)
-
-        return x
+        return x, lut_param, theta
 
     def reparameterize(self, mu, log_var):
         """_summary_
@@ -192,12 +239,12 @@ class VAE(nn.Module):
             _type_: _description_
         """
         # first apply the transform
-        x = self.stn(x)
+        x, lut_param, theta = self.stn(x)
 
         mu, log_var = self.encoder(x)
         z = self.reparameterize(mu, log_var)
         x_recon = self.decoder(z)
-        return x_recon, mu, log_var
+        return x_recon, mu, log_var, lut_param, theta
 
 
 if "__main__" == __name__:
