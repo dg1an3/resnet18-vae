@@ -25,7 +25,7 @@ class Decoder(nn.Module):
         self.fc = nn.Linear(latent_dim, reduce(lambda x, y: x * y, size_from_fc))
 
         self.residual_blocks = nn.Sequential(
-            ReverseBasicBlock(512, 256, stride=4),
+            ReverseBasicBlock(512, 256, stride=2),
             ReverseBasicBlock(256, 256),
             ReverseBasicBlock(256, 128, stride=2),
             ReverseBasicBlock(128, 128),

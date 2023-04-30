@@ -87,7 +87,7 @@ class Encoder(nn.Module):
             BasicBlock(128, 128),
             BasicBlock(128, 256, stride=2),
             BasicBlock(256, 256),
-            BasicBlock(256, 512, stride=4),
+            BasicBlock(256, 512, stride=2),
             BasicBlock(512, 512),
         )
 

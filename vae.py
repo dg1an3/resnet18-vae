@@ -84,15 +84,15 @@ class VAE(nn.Module):
          
         self.use_abs = False
         self.localization = nn.Sequential(
-            # nn.Conv2d(1, 8, kernel_size=7),
+            nn.Conv2d(1, 8, kernel_size=7),
             nn.MaxPool2d(2, stride=2),
             nn.ReLU(True),
-            nn.Conv2d(kernel_count, 10, kernel_size=5),
+            nn.Conv2d(8, 10, kernel_size=5),
             nn.MaxPool2d(2, stride=2),
             nn.ReLU(True),
         )
         self.fc_loc = nn.Sequential(
-            nn.Linear(10 * 110 * 110, 32), nn.ReLU(True), nn.Linear(32, 3 * 2)
+            nn.Linear(10 * 108 * 108, 32), nn.ReLU(True), nn.Linear(32, 3 * 2)
         )
 
         # Initialize the weights/bias with identity transformation
@@ -101,13 +101,13 @@ class VAE(nn.Module):
             torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
         )
 
-        self.fc_lut = nn.Sequential(
-            nn.Linear(10 * 110 * 110, 32), nn.ReLU(True), nn.Linear(32, 1)
-        )
-        self.fc_lut[2].weight.data.zero_()
-        self.fc_lut[2].bias.data.copy_(
-            torch.tensor([1], dtype=torch.float)
-        )
+        # self.fc_lut = nn.Sequential(
+        #     nn.Linear(10 * 110 * 110, 32), nn.ReLU(True), nn.Linear(32, 1)
+        # )
+        # self.fc_lut[2].weight.data.zero_()
+        # self.fc_lut[2].bias.data.copy_(
+        #     torch.tensor([1], dtype=torch.float)
+        # )
 
         self.input_size = input_size
         self.latent_dim = latent_dim
@@ -138,29 +138,29 @@ class VAE(nn.Module):
         """
         # print(x.shape)
 
-        x_prime = self.conv_real(x) ** 2 + self.conv_imag(x) ** 2
+        x_prime = x # self.conv_real(x) ** 2 + self.conv_imag(x) ** 2
         # print(x_prime.shape)
 
-        if self.use_abs:
-            x_prime = torch.sqrt(x_prime)
+        #if self.use_abs:
+        #    x_prime = torch.sqrt(x_prime)
 
         xs = self.localization(x_prime)
         # print(xs.shape)
 
-        xs = xs.view(-1, 10 * 110 * 110)
+        xs = xs.view(-1, 10 * 108 * 108)
         # print(xs.shape)
         theta = self.fc_loc(xs)
         theta = theta.view(-1, 2, 3)
 
         # now apply LUT
-        lut_param = self.fc_lut(xs)
-        lut_param = lut_param.view(-1,1)
-        lut_param = torch.exp(lut_param)        
-        lut_param = lut_param.reshape(-1,1,1,1)
-        print(lut_param.shape)
-        print(x.shape)
+        # lut_param = self.fc_lut(xs)
+        # lut_param = lut_param.view(-1,1)
+        # lut_param = torch.exp(lut_param)        
+        # lut_param = lut_param.reshape(-1,1,1,1)
+        # print(lut_param.shape)
+        # print(x.shape)
 
-        x = torch.pow(x, lut_param)
+        # x = torch.pow(x, lut_param)
 
         # and apply 
         grid = F.affine_grid(theta, x.size())
