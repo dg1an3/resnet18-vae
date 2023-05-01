@@ -9,7 +9,16 @@ from encoder import Encoder
 from decoder import Decoder
 
 
-def vae_loss(recon_x, x, mu, log_var, recon_loss_metric="l1_loss", beta=1.0):
+def vae_loss(
+    recon_x,
+    x,
+    mu,
+    log_var,
+    x_after_v1=None,
+    x_before_v1=None,
+    recon_loss_metric="l1_loss",
+    beta=1.0,
+):
     """_summary_
 
     Args:
@@ -25,12 +34,18 @@ def vae_loss(recon_x, x, mu, log_var, recon_loss_metric="l1_loss", beta=1.0):
     """
     if recon_loss_metric == "binary_cross_entropy":
         recon_loss = F.binary_cross_entropy(recon_x, x, reduction="mean")
+        if x_after_v1 != None:
+            recon_loss += F.binary_cross_entropy(x_after_v1, x_before_v1)
     elif recon_loss_metric == "l1_loss":
         recon_loss = F.l1_loss(recon_x, x)
+        if x_after_v1 != None:
+            recon_loss += F.l1_loss(x_after_v1, x_before_v1)
     elif recon_loss_metric == "mse_loss":
         recon_loss = F.mse_loss(recon_x, x)
+        if x_after_v1 != None:
+            recon_loss += F.mse_loss(x_after_v1, x_before_v1)
     else:
-        raise("Unrecognized loss metric")
+        raise ("Unrecognized loss metric")
 
     kld_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
     return recon_loss, kld_loss, recon_loss + beta * kld_loss
@@ -48,7 +63,7 @@ class VAE(nn.Module):
         super(VAE, self).__init__()
 
         # prepare the STN preprocessor
-        # TODO: separate STN in to its own module, so it can be invoked on inputs to: 
+        # TODO: separate STN in to its own module, so it can be invoked on inputs to:
         #           calculate xform and lut; and apply transform and lut to inputs
         directions = 7
         kernel_count, weights_real, weights_imag = make_oriented_map(
@@ -66,9 +81,7 @@ class VAE(nn.Module):
             padding=init_kernel_size // 2,
             bias=False,
         )
-        self.conv_real.weight = torch.nn.Parameter(
-            weights_real, requires_grad=False
-        )
+        self.conv_real.weight = torch.nn.Parameter(weights_real, requires_grad=False)
 
         self.conv_imag = nn.Conv2d(
             input_size[0],
@@ -78,10 +91,8 @@ class VAE(nn.Module):
             padding=init_kernel_size // 2,
             bias=False,
         )
-        self.conv_imag.weight = torch.nn.Parameter(
-            weights_imag, requires_grad=False
-        )
-         
+        self.conv_imag.weight = torch.nn.Parameter(weights_imag, requires_grad=False)
+
         self.use_abs = False
         self.localization = nn.Sequential(
             nn.Conv2d(1, 8, kernel_size=7),
@@ -126,7 +137,7 @@ class VAE(nn.Module):
             out_channels=input_size[0],
             final_kernel_size=init_kernel_size,
         )
-    
+
     def stn(self, x):
         """Spatial transformer network forward function
 
@@ -138,10 +149,10 @@ class VAE(nn.Module):
         """
         # print(x.shape)
 
-        x_prime = x # self.conv_real(x) ** 2 + self.conv_imag(x) ** 2
+        x_prime = x  # self.conv_real(x) ** 2 + self.conv_imag(x) ** 2
         # print(x_prime.shape)
 
-        #if self.use_abs:
+        # if self.use_abs:
         #    x_prime = torch.sqrt(x_prime)
 
         xs = self.localization(x_prime)
@@ -155,14 +166,14 @@ class VAE(nn.Module):
         # now apply LUT
         # lut_param = self.fc_lut(xs)
         # lut_param = lut_param.view(-1,1)
-        # lut_param = torch.exp(lut_param)        
+        # lut_param = torch.exp(lut_param)
         # lut_param = lut_param.reshape(-1,1,1,1)
         # print(lut_param.shape)
         # print(x.shape)
 
         # x = torch.pow(x, lut_param)
 
-        # and apply 
+        # and apply
         grid = F.affine_grid(theta, x.size())
         x = F.grid_sample(x, grid)
 
@@ -194,10 +205,10 @@ class VAE(nn.Module):
         # first apply the transform
         x = self.stn(x)
 
-        mu, log_var = self.encoder(x)
+        mu, log_var, x_after_v1 = self.encoder(x)
         z = self.reparameterize(mu, log_var)
-        x_recon = self.decoder(z)
-        return x_recon, mu, log_var
+        x_recon, x_before_v1 = self.decoder(z)
+        return x_recon, mu, log_var, x_after_v1, x_before_v1
 
 
 if "__main__" == __name__:

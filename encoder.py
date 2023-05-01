@@ -132,11 +132,13 @@ class Encoder(nn.Module):
         else:
             x = self.conv(x)
 
+        x_after_v1 = x.clone()
+
         x = self.residual_blocks(x)
         x = x.view(x.size(0), -1)
         mu = self.fc_mu(x)
         log_var = self.fc_log_var(x)
-        return mu, log_var
+        return mu, log_var, x_after_v1
 
 
 if __name__ == "__main__":
