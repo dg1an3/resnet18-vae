@@ -35,7 +35,7 @@ def vae_loss(
     if recon_loss_metric == "binary_cross_entropy":
         recon_loss = F.binary_cross_entropy(recon_x, x, reduction="mean")
         if x_after_v1 != None:
-            recon_loss += F.binary_cross_entropy(x_after_v1, x_before_v1)
+            recon_loss += F.binary_cross_entropy(x_after_v1, x_before_v1, reduction="mean")
     elif recon_loss_metric == "l1_loss":
         recon_loss = F.l1_loss(recon_x, x)
         if x_after_v1 != None:
