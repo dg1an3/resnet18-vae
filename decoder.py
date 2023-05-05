@@ -25,8 +25,8 @@ class Decoder(nn.Module):
         self.fc = nn.Linear(latent_dim, reduce(lambda x, y: x * y, size_from_fc))
 
         self.residual_blocks = nn.Sequential(
-            ReverseBasicBlock(512, 256, stride=2),
-            ReverseBasicBlock(256, 256),
+            # ReverseBasicBlock(512, 256, stride=2),
+            # ReverseBasicBlock(256, 256),
             ReverseBasicBlock(256, 128, stride=2),
             ReverseBasicBlock(128, 128),
             ReverseBasicBlock(128, 64, stride=2),
@@ -35,7 +35,21 @@ class Decoder(nn.Module):
             ReverseBasicBlock(64, 40),
         )
 
-        self.conv_transpose = nn.Sequential(
+        self.conv_transpose_2 = nn.Sequential(
+            nn.ConvTranspose2d(
+                40,
+                40,
+                kernel_size=final_kernel_size,
+                stride=2,
+                padding=final_kernel_size // 2,
+                output_padding=1,
+                bias=False,
+            ),
+            #nn.BatchNorm2d(20),
+            nn.Sigmoid(),
+        )
+
+        self.conv_transpose_1 = nn.Sequential(
             nn.ConvTranspose2d(
                 40,
                 out_channels,
@@ -45,7 +59,7 @@ class Decoder(nn.Module):
                 output_padding=1,
                 bias=False,
             ),
-            nn.BatchNorm2d(out_channels),
+            #nn.BatchNorm2d(out_channels),
             nn.Sigmoid(),
         )
 
@@ -64,11 +78,17 @@ class Decoder(nn.Module):
         )
         x = self.residual_blocks(x)
 
+        x_before_v2 = x.clone()
+        x_before_v2 = F.max_pool2d(x_before_v2, kernel_size=3, stride=2, padding=1)
+
+        x = self.conv_transpose_2(x)
+
         x_before_v1 = x.clone()
         x_before_v1 = F.max_pool2d(x_before_v1, kernel_size=3, stride=2, padding=1)
 
-        x = self.conv_transpose(x)
-        return x, x_before_v1
+        x = self.conv_transpose_1(x)
+
+        return x, x_before_v2, x_before_v1
 
 
 if "__main__" == __name__:
