@@ -4,6 +4,7 @@ import torchvision.transforms.functional as TF
 import cv2
 import numpy as np
 
+# TODO: deprecate this in favor of Dataset-derived classes
 # TODO: get from the environment
 BASE_DATA_PATH = Path("D:\\") / "data"
 
