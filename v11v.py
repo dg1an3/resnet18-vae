@@ -1,12 +1,11 @@
 import torch
 import torch.nn as nn
-from torchinfo import summary
 
-from filter_utils import make_oriented_map
+from oriented_powermap import OrientedPowerMap
 
 
 class V11V(nn.Module):
-    def __init__(self, input_size, init_kernel_size, directions):
+    def __init__(self, in_channels, kernel_size, directions):
         """_summary_
 
         Args:
@@ -15,54 +14,21 @@ class V11V(nn.Module):
             directions (_type_): _description_
         """
         super(V11V, self).__init__()
-        self.use_abs = False
 
-        kernel_count, weights_real, weights_imag = make_oriented_map(
-            inplanes=input_size[0],
-            kernel_size=init_kernel_size,
+        self.layer_1 = OrientedPowerMap(
+            in_channels=in_channels,
+            use_abs=False,
+            use_batch_norm=True,
+            kernel_size=kernel_size,
             directions=directions,
-            stride=1,
         )
 
-        self.conv_real = nn.Conv2d(
-            input_size[0],
-            kernel_count,
-            kernel_size=init_kernel_size,
-            stride=2,
-            padding=init_kernel_size // 2,
-            bias=False,
-        )
-        self.conv_real.weight = torch.nn.Parameter(weights_real, requires_grad=False)
-
-        self.conv_imag = nn.Conv2d(
-            input_size[0],
-            kernel_count,
-            kernel_size=init_kernel_size,
-            stride=2,
-            padding=init_kernel_size // 2,
-            bias=False,
-        )
-        self.conv_imag.weight = torch.nn.Parameter(weights_imag, requires_grad=False)
-
-        self.post_encoder = nn.Sequential(
-            nn.BatchNorm2d(kernel_count),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-        )
-
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(
-                kernel_count,
-                out_channels=input_size[0],
-                kernel_size=init_kernel_size,
-                stride=4,
-                padding=init_kernel_size // 2,
-                output_padding=3,
-                bias=False,
-            ),
-            # nn.MaxUnpool2d(kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(input_size[0]),
-            nn.Sigmoid(),
+        self.layer_2 = OrientedPowerMap(
+            in_channels=self.layer_1.out_channels,
+            use_abs=False,
+            use_batch_norm=True,
+            kernel_size=kernel_size,
+            directions=directions,
         )
 
     def encode(self, x):
@@ -74,11 +40,9 @@ class V11V(nn.Module):
         Returns:
             _type_: _description_
         """
-        x = self.conv_real(x) ** 2 + self.conv_imag(x) ** 2
-        if self.use_abs:
-            x = torch.sqrt(x)
-        x = self.post_encoder(x)
-        return x
+        layer_1_out = self.layer_1(x)
+        layer_2_out = self.layer_2(layer_1_out)
+        return [layer_1_out, layer_2_out]
 
     def decode(self, x):
         """_summary_
@@ -89,7 +53,9 @@ class V11V(nn.Module):
         Returns:
             _type_: _description_
         """
-        return self.decoder(x)
+        decoder_2_out = self.layer_2.decoder(x)
+        decoder_1_out = self.layer_1.decoder(decoder_1_out)
+        return [decoder_2_out, decoder_1_out]
 
     def forward(self, x):
         """_summary_
@@ -100,9 +66,9 @@ class V11V(nn.Module):
         Returns:
             _type_: _description_
         """
-        x = self.encode(x)
-        x = self.decode(x)
-        return x
+        [layer_1_out, layer_2_out] = self.encode(x)
+        [decoder_2_out, decoder_1_out] = self.decode(layer_2_out)
+        return [layer_1_out, layer_2_out, decoder_2_out, decoder_1_out]
 
 
 if __name__ == "__main__":
@@ -115,13 +81,14 @@ if __name__ == "__main__":
     import torch.nn.functional as F
     import torch.optim as optim
     from torch.utils.data import DataLoader
+    from torchinfo import summary
 
     from load_dataset import load_dataset
 
     device = torch.device("cuda" if torch.cuda.is_available else "cpu")
 
     # construct the model
-    model = V11V(input_size=(1, 448, 448), init_kernel_size=11, directions=7)
+    model = V11V(input_size=(1, 448, 448), kernel_size=11, directions=7)
     print(
         summary(
             model,
@@ -138,20 +105,19 @@ if __name__ == "__main__":
     )
 
     # display filters
-    columns = 7+1 # directions+1
-    rows = model.conv_real.weight.shape[0] // columns
+    columns = 7 + 1  # directions+1
+    rows = model.layer_1.conv_real.weight.shape[0] // columns
 
     fig, ax = plt.subplots(rows, columns, figsize=(20, 8))
     plt.ion()
 
     for row in range(rows):
         for column in range(columns):
-            filter_weights = model.conv_real.weight[row * columns + column][0]
+            filter_weights = model.layer_1.conv_real.weight[row * columns + column][0]
             filter_weights = filter_weights.cpu()
             ax[row][column].imshow(filter_weights, cmap="bone")
 
     plt.show()
-
 
     model = model.to(device)
 
