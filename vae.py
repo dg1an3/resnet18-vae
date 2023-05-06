@@ -43,7 +43,7 @@ def vae_loss(
         recon_loss = F.l1_loss(recon_x, x)
         if x_after_v1 != None:
             recon_loss += F.l1_loss(x_after_v1, x_before_v1)
-            recon_loss += F.l1_loss(x_after_v2, x_before_v2)
+            recon_loss += 0.1 * F.l1_loss(x_after_v2, x_before_v2)
     elif recon_loss_metric == "mse_loss":
         recon_loss = F.mse_loss(recon_x, x)
         if x_after_v1 != None:

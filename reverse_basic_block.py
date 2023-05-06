@@ -11,11 +11,12 @@ class ReverseBasicBlock(nn.Module):
             in_channels,
             out_channels,
             kernel_size=3,
-            stride=stride,
+            stride=1,
             padding=1,
-            output_padding=stride - 1,
+            output_padding=0,  # stride - 1,
             bias=False,
         )
+        self.upsample1 = nn.Upsample(scale_factor=stride, mode="bilinear")
         self.bn1 = nn.BatchNorm2d(out_channels)
         self.conv2 = nn.ConvTranspose2d(
             out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False
@@ -28,10 +29,11 @@ class ReverseBasicBlock(nn.Module):
                     in_channels,
                     out_channels,
                     kernel_size=1,
-                    stride=stride,
-                    output_padding=stride - 1,
+                    stride=1,
+                    output_padding=0,  # stride - 1,
                     bias=False,
                 ),
+                nn.Upsample(scale_factor=stride, mode="bilinear"),
                 nn.BatchNorm2d(out_channels),
             )
         else:
@@ -39,7 +41,7 @@ class ReverseBasicBlock(nn.Module):
 
     def forward(self, x):
         identity = x
-        out = F.relu(self.bn1(self.conv1(x)))
+        out = F.relu(self.bn1(self.upsample1(self.conv1(x))))
         out = self.bn2(self.conv2(out))
 
         identity = self.shortcut(identity)

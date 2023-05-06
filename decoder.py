@@ -40,12 +40,13 @@ class Decoder(nn.Module):
                 40,
                 40,
                 kernel_size=final_kernel_size,
-                stride=2,
+                stride=1,
                 padding=final_kernel_size // 2,
-                output_padding=1,
+                output_padding=0,
                 bias=False,
             ),
-            #nn.BatchNorm2d(20),
+            #nn.BatchNorm2d(40) if False else nn.Identity(), 
+            nn.Upsample(scale_factor=2, mode='bilinear'),
             nn.Sigmoid(),
         )
 
@@ -54,12 +55,13 @@ class Decoder(nn.Module):
                 40,
                 out_channels,
                 kernel_size=final_kernel_size,
-                stride=2,
+                stride=1,
                 padding=final_kernel_size // 2,
-                output_padding=1,
+                output_padding=0,
                 bias=False,
             ),
             #nn.BatchNorm2d(out_channels),
+            nn.Upsample(scale_factor=2, mode='bilinear'),
             nn.Sigmoid(),
         )
 
