@@ -39,8 +39,9 @@ def make_gabor_bank(xs, ys, directions=3, freqs=[2.0, 1.0]):
 
 
 def kernels2weights(kernels, in_channels=1, dtype=torch.float32):
+    kernels = np.repeat(kernels, in_channels, axis=0)
     kernels = np.expand_dims(kernels, axis=1)
-    kernels = np.repeat(kernels, in_channels, axis=1)
+    kernels = np.repeat(kernels, in_channels, axis=1)    
     return torch.tensor(kernels, dtype=dtype)
 
 

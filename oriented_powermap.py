@@ -10,6 +10,7 @@ class OrientedPowerMap(nn.Module):
     Args:
         nn (_type_): _description_
     """
+
     def __init__(
         self,
         in_channels,
@@ -19,6 +20,8 @@ class OrientedPowerMap(nn.Module):
         golden_mean_octaves=[3, 2, 1, 0, -1, -2],
         directions=7,
     ):
+        super(OrientedPowerMap, self).__init__()
+
         self.in_channels = in_channels
 
         self.kernel_size = kernel_size
@@ -35,7 +38,6 @@ class OrientedPowerMap(nn.Module):
             # golden_mean_octaves=self.golden_mean_octaves,
             stride=1,
         )
-        self.out_channels = kernel_count
 
         self.conv_real = nn.Conv2d(
             in_channels,
@@ -57,25 +59,27 @@ class OrientedPowerMap(nn.Module):
         )
         self.conv_imag.weight = torch.nn.Parameter(weights_imag, requires_grad=False)
 
-        self.batch_norm = nn.BatchNorm2d(self.out_channels)
+        self.out_channels = self.conv_real.weight.shape[0] // 10
+
+        self.batch_norm = nn.BatchNorm2d(self.conv_real.weight.shape[0])
         self.activation = nn.ReLU()
         self.max_pool_2 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.dim_reduce = nn.Conv2d(
-            self.out_channels, self.out_channels, kernel_size=1, bias=False
+            self.conv_real.weight.shape[0], self.out_channels, kernel_size=1, bias=False
         )
 
         self.decoder = nn.Sequential(
             nn.ConvTranspose2d(
                 self.out_channels,
                 out_channels=self.in_channels,
-                kernel_size=kernel_size,
+                kernel_size=self.kernel_size,
                 stride=1,
-                padding=kernel_size // 2,
-                output_padding=3,
+                padding=self.kernel_size // 2,
+                output_padding=0,
                 bias=False,
             ),
-            nn.MaxUnpool2d(kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(in_channels),
+            nn.Upsample(scale_factor=2, mode='bilinear'),
+            nn.BatchNorm2d(self.in_channels),
             nn.Sigmoid(),
         )
 
@@ -91,7 +95,7 @@ class OrientedPowerMap(nn.Module):
         # capture size for later comparison
         pre_size = x.size()
 
-        x = self.conv_real_1(x) ** 2 + self.conv_imag_1(x) ** 2
+        x = self.conv_real(x) ** 2 + self.conv_imag(x) ** 2
         if self.use_abs:
             x = torch.sqrt(x)
 
@@ -104,6 +108,35 @@ class OrientedPowerMap(nn.Module):
         x = self.dim_reduce(x)
 
         # check that sizes are in half
-        assert x.size()[0] == pre_size[0] // 2
+        print(f"pre_size = {pre_size}; post_size = {x.size()}")
+        assert x.size()[-1] == pre_size[-1] // 2
 
         return x
+
+
+if __name__ == "__main__":
+    # construct the model
+    model = OrientedPowerMap(in_channels=1)
+    model = model.to("cpu")
+
+    from torchinfo import summary
+
+    print(
+        summary(
+            model,
+            input_size=(37, 1, 448, 448),
+            col_names=[
+                "input_size",
+                "kernel_size",
+                "mult_adds",
+                "num_params",
+                "output_size",
+                "trainable",
+            ],
+        )
+    )
+
+    x = torch.randn((47,1,448,448)).to("cuda")
+    x_latent = model(x)
+    x_prime = model.decoder(x_latent)
+    print(x, x_latent, x_prime)
