@@ -17,10 +17,13 @@ def get_clahe_transforms(clahe_tile_size=8, input_size=448):
     Returns:
         _type_: _description_
     """
-    clahe = cv2.createCLAHE(clipLimit=4, tileGridSize=clahe_tile_size)
+    clahe = cv2.createCLAHE(
+        clipLimit=4, tileGridSize=(clahe_tile_size, clahe_tile_size)
+    )
 
     return transforms.Compose(
         [
+            transforms.ToPILImage(),
             transforms.Resize((input_size, input_size)),
             transforms.Grayscale(),
             transforms.Lambda(np.array),
@@ -75,19 +78,19 @@ class Cxr8Dataset(Dataset):
         elif isinstance(image_index, str):
             images = self.read_img_file(image_index)
         else:
-            raise("unknown type")
-        
+            raise ("unknown type")
+
         finding_labels = self.data_entry_df["Finding Labels"].iloc[idx]
         if isinstance(finding_labels, pd.Series):
-            finding_labels = finding_labels.str.split("|")
+            finding_labels = finding_labels.str  # .split("|")
         elif isinstance(finding_labels, str):
-            finding_labels = finding_labels.split("|")
+            finding_labels = finding_labels  # .split("|")
         else:
-            raise("unknown type")
-
-        sample = {"image": images, "labels": finding_labels}
+            raise ("unknown type")
 
         if self.transform:
-            sample = self.transform(sample)
+            images = self.transform(images)
 
-        return sample
+        samples = {"image": images, "labels": finding_labels}
+
+        return samples
