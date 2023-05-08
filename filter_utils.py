@@ -63,7 +63,7 @@ def make_oriented_map(
     """
     xs, ys = make_meshgrid(sz=kernel_size)
     phi = (5**0.5 + 1) / 2  # golden ratio
-    freqs = [phi**n for n in range(3, -2, -1)]
+    freqs = [phi**n for n in range(2, -3, -1)]
     kernels_complex = (list)(
         make_gabor_bank(xs, ys, directions=directions, freqs=freqs)
     )
