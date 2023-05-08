@@ -25,8 +25,8 @@ class Decoder(nn.Module):
         self.fc = nn.Linear(latent_dim, reduce(lambda x, y: x * y, size_from_fc))
 
         self.residual_blocks = nn.Sequential(
-            # ReverseBasicBlock(512, 256, stride=2),
-            # ReverseBasicBlock(256, 256),
+            ReverseBasicBlock(512, 256, stride=2),
+            ReverseBasicBlock(256, 256),
             ReverseBasicBlock(256, 128, stride=2),
             ReverseBasicBlock(128, 128),
             ReverseBasicBlock(128, 64, stride=2),
@@ -35,20 +35,20 @@ class Decoder(nn.Module):
             ReverseBasicBlock(64, 40),
         )
 
-        self.conv_transpose_2 = nn.Sequential(
-            nn.ConvTranspose2d(
-                40,
-                40,
-                kernel_size=final_kernel_size,
-                stride=1,
-                padding=final_kernel_size // 2,
-                output_padding=0,
-                bias=False,
-            ),
-            #nn.BatchNorm2d(40) if False else nn.Identity(), 
-            nn.Upsample(scale_factor=2, mode='bilinear'),
-            nn.Sigmoid(),
-        )
+        # self.conv_transpose_2 = nn.Sequential(
+        #     nn.ConvTranspose2d(
+        #         40,
+        #         40,
+        #         kernel_size=final_kernel_size,
+        #         stride=1,
+        #         padding=final_kernel_size // 2,
+        #         output_padding=0,
+        #         bias=False,
+        #     ),
+        #     #nn.BatchNorm2d(40) if False else nn.Identity(), 
+        #     nn.Upsample(scale_factor=2, mode='bilinear'),
+        #     nn.Sigmoid(),
+        # )
 
         self.conv_transpose_1 = nn.Sequential(
             nn.ConvTranspose2d(
@@ -80,10 +80,10 @@ class Decoder(nn.Module):
         )
         x = self.residual_blocks(x)
 
-        x_before_v2 = x.clone()
-        x_before_v2 = F.max_pool2d(x_before_v2, kernel_size=3, stride=2, padding=1)
+        x_before_v2 = None # x.clone()
+        # x_before_v2 = F.max_pool2d(x_before_v2, kernel_size=3, stride=2, padding=1)
 
-        x = self.conv_transpose_2(x)
+        # x = self.conv_transpose_2(x)
 
         x_before_v1 = x.clone()
         x_before_v1 = F.max_pool2d(x_before_v1, kernel_size=3, stride=2, padding=1)

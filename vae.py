@@ -38,12 +38,12 @@ def vae_loss(
         recon_loss = F.binary_cross_entropy(recon_x, x, reduction="mean")
         if x_after_v1 != None:
             recon_loss += F.binary_cross_entropy(x_after_v1, x_before_v1, reduction="mean")
-            recon_loss += F.binary_cross_entropy(x_after_v2, x_before_v2, reduction="mean")
+            # recon_loss += F.binary_cross_entropy(x_after_v2, x_before_v2, reduction="mean")
     elif recon_loss_metric == "l1_loss":
         recon_loss = F.l1_loss(recon_x, x)
         if x_after_v1 != None:
             recon_loss += F.l1_loss(x_after_v1, x_before_v1)
-            recon_loss += 0.1 * F.l1_loss(x_after_v2, x_before_v2)
+            # recon_loss += 0.1 * F.l1_loss(x_after_v2, x_before_v2)
     elif recon_loss_metric == "mse_loss":
         recon_loss = F.mse_loss(recon_x, x)
         if x_after_v1 != None:
@@ -57,7 +57,7 @@ def vae_loss(
 
 
 class VAE(nn.Module):
-    def __init__(self, input_size, init_kernel_size=11, latent_dim=32):
+    def __init__(self, input_size, init_kernel_size=13, latent_dim=32):
         """_summary_
 
         Args:

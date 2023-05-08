@@ -63,53 +63,56 @@ class Encoder(nn.Module):
             )
 
             self.post_1 = nn.Sequential(
-                # nn.BatchNorm2d(kernel_count_1),
+                nn.BatchNorm2d(kernel_count_1),
                 nn.ReLU(),
                 nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
                 nn.Conv2d(in_channels=kernel_count_1, out_channels=kernel_count_1, kernel_size=1),
                 nn.ReLU(),
             )
 
-            kernel_count_2, weights_real_2, weights_imag_2 = make_oriented_map(
-                inplanes=kernel_count_1,
-                kernel_size=init_kernel_size,
-                directions=directions,
-                stride=1,
-            )
+            self.in_planes = kernel_count_1
 
-            self.conv_real_2 = nn.Conv2d(
-                kernel_count_1,
-                kernel_count_2,
-                kernel_size=init_kernel_size,
-                stride=1,
-                padding=init_kernel_size // 2,
-                bias=False,
-            )
-            self.conv_real_2.weight = torch.nn.Parameter(
-                weights_real_2, requires_grad=False
-            )
+            # kernel_count_2, weights_real_2, weights_imag_2 = make_oriented_map(
+            #     inplanes=kernel_count_1,
+            #     kernel_size=init_kernel_size,
+            #     directions=directions,
+            #     stride=1,
+            # )
 
-            self.conv_imag_2 = nn.Conv2d(
-                kernel_count_1,
-                kernel_count_2,
-                kernel_size=init_kernel_size,
-                stride=1,
-                padding=init_kernel_size // 2,
-                bias=False,
-            )
-            self.conv_imag_2.weight = torch.nn.Parameter(
-                weights_imag_2, requires_grad=False
-            )
+            # self.conv_real_2 = nn.Conv2d(
+            #     kernel_count_1,
+            #     kernel_count_2,
+            #     kernel_size=init_kernel_size,
+            #     stride=1,
+            #     padding=init_kernel_size // 2,
+            #     bias=False,
+            # )
+            # self.conv_real_2.weight = torch.nn.Parameter(
+            #     weights_real_2, requires_grad=False
+            # )
 
-            self.post_2 = nn.Sequential(
-                # nn.BatchNorm2d(kernel_count_2),
-                nn.ReLU(),
-                nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-                nn.Conv2d(in_channels=kernel_count_2, out_channels=kernel_count_2, kernel_size=1),
-                nn.ReLU(),                
-            )
+            # self.conv_imag_2 = nn.Conv2d(
+            #     kernel_count_1,
+            #     kernel_count_2,
+            #     kernel_size=init_kernel_size,
+            #     stride=1,
+            #     padding=init_kernel_size // 2,
+            #     bias=False,
+            # )
+            # self.conv_imag_2.weight = torch.nn.Parameter(
+            #     weights_imag_2, requires_grad=False
+            # )
 
-            self.in_planes = kernel_count_2
+            # self.post_2 = nn.Sequential(
+            #     # nn.BatchNorm2d(kernel_count_2),
+            #     nn.ReLU(),
+            #     nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+            #     nn.Conv2d(in_channels=kernel_count_2, out_channels=kernel_count_2, kernel_size=1),
+            #     nn.ReLU(),                
+            # )
+
+            # self.in_planes = kernel_count_2
+
             print(f"self.in_planes {self.in_planes}")
 
         else:
@@ -130,8 +133,8 @@ class Encoder(nn.Module):
             BasicBlock(128, 128),
             BasicBlock(128, 256, stride=2),
             BasicBlock(256, 256),
-            # BasicBlock(256, 512, stride=2),
-            # BasicBlock(512, 512),
+            BasicBlock(256, 512, stride=2),
+            BasicBlock(512, 512),
         )
 
         fixed_size = False
@@ -143,8 +146,8 @@ class Encoder(nn.Module):
                     nn.Sequential(
                         self.conv_real_1 if self.use_ori_map else self.conv,
                         self.post_1,
-                        self.conv_real_2 if self.use_ori_map else self.conv,
-                        self.post_2,
+                        # self.conv_real_2 if self.use_ori_map else self.conv,
+                        # self.post_2,
                         self.residual_blocks,
                     ),
                     input_size,
@@ -177,12 +180,13 @@ class Encoder(nn.Module):
 
             x_after_v1 = x.clone()
 
-            x = self.conv_real_2(x) ** 2 + self.conv_imag_2(x) ** 2
-            if self.use_abs:
-                x = torch.sqrt(x)
-            x = self.post_2(x)
+            # x = self.conv_real_2(x) ** 2 + self.conv_imag_2(x) ** 2
+            # if self.use_abs:
+            #     x = torch.sqrt(x)
+            # x = self.post_2(x)
 
-            x_after_v2 = x.clone()
+            # x_after_v2 = x.clone()
+            x_after_v2 = None
 
         else:
             x = self.conv(x)
