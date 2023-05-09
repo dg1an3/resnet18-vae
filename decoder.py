@@ -51,13 +51,13 @@ class Decoder(nn.Module):
         # )
 
         self.conv_transpose_1 = nn.Sequential(
-            nn.ConvTranspose2d(
+            nn.Conv2d(
                 40,
                 out_channels,
                 kernel_size=final_kernel_size,
                 stride=1,
                 padding=final_kernel_size // 2,
-                output_padding=0,
+                #output_padding=0,
                 bias=False,
             ),
             #nn.BatchNorm2d(out_channels),
