@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchinfo import summary
 
+import numpy as np
+
 from filter_utils import make_oriented_map
 
 from encoder import Encoder
@@ -15,6 +17,7 @@ def vae_loss(
     mu,
     log_var,
     x_after_v1=None,
+    x_after_v1_weight=None,
     x_after_v2=None,
     x_before_v2=None,
     x_before_v1=None,
@@ -37,12 +40,33 @@ def vae_loss(
     if recon_loss_metric == "binary_cross_entropy":
         recon_loss = F.binary_cross_entropy(recon_x, x, reduction="mean")
         if x_after_v1 != None:
-            recon_loss += F.binary_cross_entropy(x_after_v1, x_before_v1, reduction="mean")
+            recon_loss += F.binary_cross_entropy(
+                x_after_v1, x_before_v1, reduction="mean"
+            )
             # recon_loss += F.binary_cross_entropy(x_after_v2, x_before_v2, reduction="mean")
     elif recon_loss_metric == "l1_loss":
         recon_loss = F.l1_loss(recon_x, x)
         if x_after_v1 != None:
-            recon_loss += F.l1_loss(x_after_v1, x_before_v1)
+            # TODO: weight by dimensions -- pass in from
+            match x_after_v1_weight:
+                case None:
+                    pass    
+                case np.ndarray():
+                    x_after_v1_weight = torch.tensor(x_after_v1_weight).to(v1_loss.device)
+                case torch.Tensor():
+                    x_after_v1_weight = x_after_v1_weight.to(v1_loss.device)
+                case _:
+                    raise("unknown type")
+                
+            if x_after_v1_weight is None:
+                v1_loss = F.l1_loss(x_after_v1, x_before_v1, reduction="mean")
+            else:
+                v1_loss = F.l1_loss(x_after_v1, x_before_v1, reduction="none")
+                v1_loss = torch.mean(v1_loss, (0, -1, -2))
+                v1_loss = torch.mul(x_after_v1_weight, v1_loss)
+                v1_loss = torch.mean(v1_loss)
+
+            recon_loss += v1_loss
             # recon_loss += 0.1 * F.l1_loss(x_after_v2, x_before_v2)
     elif recon_loss_metric == "mse_loss":
         recon_loss = F.mse_loss(recon_x, x)
@@ -87,7 +111,9 @@ class VAE(nn.Module):
                 padding=init_kernel_size // 2,
                 bias=False,
             )
-            self.conv_real.weight = torch.nn.Parameter(weights_real, requires_grad=False)
+            self.conv_real.weight = torch.nn.Parameter(
+                weights_real, requires_grad=False
+            )
 
             self.conv_imag = nn.Conv2d(
                 input_size[0],
@@ -97,7 +123,9 @@ class VAE(nn.Module):
                 padding=init_kernel_size // 2,
                 bias=False,
             )
-            self.conv_imag.weight = torch.nn.Parameter(weights_imag, requires_grad=False)
+            self.conv_imag.weight = torch.nn.Parameter(
+                weights_imag, requires_grad=False
+            )
 
             self.use_abs = False
             self.localization = nn.Sequential(
