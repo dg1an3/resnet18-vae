@@ -5,9 +5,27 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
 import cv2
+import SimpleITK as sitk
+
+def match_histograms(fixed, moving):
+    fixed = sitk.GetImageFromArray(fixed)
+    moving = sitk.GetImageFromArray(moving)
+
+    matcher = sitk.HistogramMatchingImageFilter()
+    if fixed.GetPixelID() in (sitk.sitkUInt8, sitk.sitkInt8):
+        matcher.SetNumberOfHistogramLevels(128)
+    else:
+        matcher.SetNumberOfHistogramLevels(1024)
+    matcher.SetNumberOfMatchPoints(7)
+    matcher.ThresholdAtMeanIntensityOn()
+    moving = matcher.Execute(moving, fixed)
+
+    moving = sitk.GetArrayFromImage(moving)
+
+    return moving
 
 
-def get_clahe_transforms(clahe_tile_size=8, input_size=448):
+def get_clahe_transforms(clip_limit=4, clahe_tile_size=8, input_size=448):
     """_summary_
 
     Args:
@@ -18,7 +36,7 @@ def get_clahe_transforms(clahe_tile_size=8, input_size=448):
         _type_: _description_
     """
     clahe = cv2.createCLAHE(
-        clipLimit=4, tileGridSize=(clahe_tile_size, clahe_tile_size)
+        clipLimit=clip_limit, tileGridSize=(clahe_tile_size, clahe_tile_size)
     )
 
     return transforms.Compose(
@@ -31,7 +49,6 @@ def get_clahe_transforms(clahe_tile_size=8, input_size=448):
             transforms.ToTensor(),
         ]
     )
-
 
 class Cxr8Dataset(Dataset):
     """_summary_
