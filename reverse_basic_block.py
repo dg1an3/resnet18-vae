@@ -7,14 +7,14 @@ class ReverseBasicBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1):
         super(ReverseBasicBlock, self).__init__()
 
-        self.conv1 = nn.ConvTranspose2d(
+        self.conv1 = nn.Conv2d(
             in_channels,
             out_channels,
             kernel_size=3,
             stride=1,
             padding=1,
-            output_padding=0,  # stride - 1,
-            bias=False,
+            #output_padding=0,  # stride - 1,
+            bias=True,
         )
         self.upsample1 = nn.Upsample(scale_factor=stride, mode="bilinear")
         self.bn1 = nn.BatchNorm2d(out_channels)
@@ -25,13 +25,13 @@ class ReverseBasicBlock(nn.Module):
 
         if stride != 1 or in_channels != out_channels:
             self.shortcut = nn.Sequential(
-                nn.ConvTranspose2d(
+                nn.Conv2d(
                     in_channels,
                     out_channels,
                     kernel_size=1,
                     stride=1,
-                    output_padding=0,  # stride - 1,
-                    bias=False,
+                    #output_padding=0,  # stride - 1,
+                    bias=True,
                 ),
                 nn.Upsample(scale_factor=stride, mode="bilinear"),
                 nn.BatchNorm2d(out_channels),
