@@ -16,10 +16,8 @@ def vae_loss(
     x,
     mu,
     log_var,
+    v1_weight=None,
     x_after_v1=None,
-    x_after_v1_weight=None,
-    x_after_v2=None,
-    x_before_v2=None,
     x_before_v1=None,
     recon_loss_metric="l1_loss",
     beta=1.0,
@@ -37,51 +35,46 @@ def vae_loss(
     Returns:
         _type_: _description_
     """
-    if recon_loss_metric == "binary_cross_entropy":
-        recon_loss = F.binary_cross_entropy(recon_x, x, reduction="mean")
-        if x_after_v1 != None:
-            recon_loss += F.binary_cross_entropy(
-                x_after_v1, x_before_v1, reduction="mean"
-            )
-            # recon_loss += F.binary_cross_entropy(x_after_v2, x_before_v2, reduction="mean")
-    elif recon_loss_metric == "l1_loss":
-        recon_loss = F.l1_loss(recon_x, x)
-        if x_after_v1 != None:
-            # TODO: weight by dimensions -- pass in from
-            match x_after_v1_weight:
-                case None:
-                    pass    
-                case np.ndarray():
-                    x_after_v1_weight = torch.tensor(x_after_v1_weight).to(v1_loss.device)
-                case torch.Tensor():
-                    x_after_v1_weight = x_after_v1_weight.to(v1_loss.device)
-                case _:
-                    raise("unknown type")
-                
-            if x_after_v1_weight is None:
-                v1_loss = F.l1_loss(x_after_v1, x_before_v1, reduction="mean")
-            else:
-                v1_loss = F.l1_loss(x_after_v1, x_before_v1, reduction="none")
-                v1_loss = torch.mean(v1_loss, (0, -1, -2))
-                v1_loss = torch.mul(x_after_v1_weight, v1_loss)
-                v1_loss = torch.mean(v1_loss)
+    match v1_weight:
+        case None:
+            pass
+        case np.ndarray():
+            v1_weight = torch.tensor(v1_weight).to(x_after_v1.device)
+        case torch.Tensor():
+            v1_weight = v1_weight.to(x_after_v1.device)
+        case _:
+            raise ("unknown weight type")
 
-            recon_loss += v1_loss
-            # recon_loss += 0.1 * F.l1_loss(x_after_v2, x_before_v2)
-    elif recon_loss_metric == "mse_loss":
-        recon_loss = F.mse_loss(recon_x, x)
-        if x_after_v1 != None:
-            recon_loss += F.mse_loss(x_after_v1, x_before_v1)
-            recon_loss += F.mse_loss(x_after_v2, x_before_v2)
-    else:
-        raise ("Unrecognized loss metric")
+    match recon_loss_metric:
+        case "binary_cross_entropy":
+            recon_loss = F.binary_cross_entropy(recon_x, x, reduction="mean")
+            if x_after_v1 is not None:
+                recon_loss += F.binary_cross_entropy(
+                    x_after_v1, x_before_v1, reduction="mean"
+                )
+        case "l1_loss":
+            recon_loss = F.l1_loss(recon_x, x)
+            if x_after_v1 is not None:
+                if v1_weight is None:
+                    recon_loss += F.l1_loss(x_after_v1, x_before_v1, reduction="mean")
+                else:
+                    v1_loss = F.l1_loss(x_after_v1, x_before_v1, reduction="none")
+                    v1_loss = torch.mean(v1_loss, (0, -1, -2))
+                    v1_loss = torch.mul(v1_weight, v1_loss)
+                    recon_loss += torch.mean(v1_loss)
+        case "mse_loss":
+            recon_loss = F.mse_loss(recon_x, x)
+            if x_after_v1 is not None:
+                recon_loss += F.mse_loss(x_after_v1, x_before_v1)
+        case _:
+            raise ("Unrecognized loss metric")
 
     kld_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
     return recon_loss, kld_loss, recon_loss + beta * kld_loss
 
 
 class VAE(nn.Module):
-    def __init__(self, input_size, init_kernel_size=13, latent_dim=32):
+    def __init__(self, input_size, init_kernel_size=13, latent_dim=32, use_stn=True):
         """_summary_
 
         Args:
@@ -91,43 +84,13 @@ class VAE(nn.Module):
         """
         super(VAE, self).__init__()
 
-        if False:
+        self.use_stn = use_stn
+        if self.use_stn:
             # prepare the STN preprocessor
+
             # TODO: separate STN in to its own module, so it can be invoked on inputs to:
             #           calculate xform and lut; and apply transform and lut to inputs
-            directions = 7
-            kernel_count, weights_real, weights_imag = make_oriented_map(
-                inplanes=input_size[0],
-                kernel_size=init_kernel_size,
-                directions=directions,
-                stride=1,
-            )
 
-            self.conv_real = nn.Conv2d(
-                input_size[0],
-                kernel_count,
-                kernel_size=init_kernel_size,
-                stride=1,
-                padding=init_kernel_size // 2,
-                bias=False,
-            )
-            self.conv_real.weight = torch.nn.Parameter(
-                weights_real, requires_grad=False
-            )
-
-            self.conv_imag = nn.Conv2d(
-                input_size[0],
-                kernel_count,
-                kernel_size=init_kernel_size,
-                stride=1,
-                padding=init_kernel_size // 2,
-                bias=False,
-            )
-            self.conv_imag.weight = torch.nn.Parameter(
-                weights_imag, requires_grad=False
-            )
-
-            self.use_abs = False
             self.localization = nn.Sequential(
                 nn.Conv2d(1, 8, kernel_size=7),
                 nn.MaxPool2d(2, stride=2),
@@ -137,22 +100,10 @@ class VAE(nn.Module):
                 nn.ReLU(True),
             )
             self.fc_loc = nn.Sequential(
-                nn.Linear(10 * 108 * 108, 32), nn.ReLU(True), nn.Linear(32, 3 * 2)
+                nn.Linear(10 * 108 * 108, 32), nn.ReLU(True), nn.Linear(32, 2 * 3)
             )
-
-            # Initialize the weights/bias with identity transformation
             self.fc_loc[2].weight.data.zero_()
-            self.fc_loc[2].bias.data.copy_(
-                torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
-            )
-
-            # self.fc_lut = nn.Sequential(
-            #     nn.Linear(10 * 110 * 110, 32), nn.ReLU(True), nn.Linear(32, 1)
-            # )
-            # self.fc_lut[2].weight.data.zero_()
-            # self.fc_lut[2].bias.data.copy_(
-            #     torch.tensor([1], dtype=torch.float)
-            # )
+            self.fc_loc[2].bias.data.copy_(torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float))
 
         self.input_size = input_size
         self.latent_dim = latent_dim
@@ -183,34 +134,31 @@ class VAE(nn.Module):
         """
         # print(x.shape)
 
-        if False:
-            x_prime = x  # self.conv_real(x) ** 2 + self.conv_imag(x) ** 2
-            # print(x_prime.shape)
+        xs = self.localization(x)
+        # print(xs.shape)
+        if xs.isnan().any(): print(f"xs is nan")
 
-            # if self.use_abs:
-            #    x_prime = torch.sqrt(x_prime)
+        xs = xs.view(-1, 10 * 108 * 108)
+        # print(xs.shape)
 
-            xs = self.localization(x_prime)
-            # print(xs.shape)
+        theta = self.fc_loc(xs)
+        theta = theta.view(-1, 2, 3)
+        if theta.isnan().any(): print(f"theta is nan")
 
-            xs = xs.view(-1, 10 * 108 * 108)
-            # print(xs.shape)
-            theta = self.fc_loc(xs)
-            theta = theta.view(-1, 2, 3)
+        # theta[:,:,0] *= 1e-1
+        # theta[:,:,1] *= 1e-1
+        # theta[:,:,2] *= 1e-1
 
-            # now apply LUT
-            # lut_param = self.fc_lut(xs)
-            # lut_param = lut_param.view(-1,1)
-            # lut_param = torch.exp(lut_param)
-            # lut_param = lut_param.reshape(-1,1,1,1)
-            # print(lut_param.shape)
-            # print(x.shape)
+        # theta[:,0,0] += 1.0
+        # theta[:,1,1] += 1.0
 
-            # x = torch.pow(x, lut_param)
+        # theta[:,1,2] += 0.05
 
-            # and apply
-            grid = F.affine_grid(theta, x.size())
-            x = F.grid_sample(x, grid)
+        print(f"theta[0] = {theta[0].detach().cpu().numpy()}")
+
+        # and apply
+        grid = F.affine_grid(theta, x.size())
+        x = F.grid_sample(x, grid, padding_mode="reflection")
 
         return x
 
@@ -228,7 +176,7 @@ class VAE(nn.Module):
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    def forward(self, x):
+    def forward_dict(self, x):
         """_summary_
 
         Args:
@@ -238,34 +186,61 @@ class VAE(nn.Module):
             _type_: _description_
         """
         # first apply the transform
+        # if self.use_stn:
         x = self.stn(x)
 
-        mu, log_var, x_after_v1, x_after_v2 = self.encoder(x)
+        mu, log_var, x_after_v1 = self.encoder(x)
         # print(f"x_after_v1.shape = {x_after_v1.shape}")
         # print(f"x_after_v2.shape = {x_after_v2.shape}")
 
         z = self.reparameterize(mu, log_var)
-        x_recon, x_before_v2, x_before_v1 = self.decoder(z)
+
+        x_recon, x_before_v1 = self.decoder(z)
         # print(f"x_before_v2.shape = {x_before_v2.shape}")
         # print(f"x_before_v1.shape = {x_before_v1.shape}")
 
-        return x_recon, mu, log_var, x_after_v1, x_after_v2, x_before_v2, x_before_v1
+        return {
+            "x_recon": x_recon,
+            "mu": mu,
+            "log_var": log_var,
+            "x_after_v1": x_after_v1,
+            "x_before_v1": x_before_v1,
+        }
+
+    def forward(self, x):
+        """_summary_
+
+        Args:
+            x (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        result_dict = self.forward_dict(x)
+        return result_dict["x_recon"]
 
 
 if "__main__" == __name__:
-    vae = VAE((1, 224, 224), 128)
-    print(
-        summary(
-            vae,
-            input_size=(37, 1, 224, 224),
-            depth=10,
-            col_names=[
-                "input_size",
-                "kernel_size",
-                "mult_adds",
-                "num_params",
-                "output_size",
-                "trainable",
-            ],
-        )
-    )
+    argv = "show"
+    match argv:
+        case "show":
+            vae = VAE((1, 224, 224), 128)
+            print(
+                summary(
+                    vae,
+                    input_size=(37, 1, 224, 224),
+                    depth=10,
+                    col_names=[
+                        "input_size",
+                        "kernel_size",
+                        "mult_adds",
+                        "num_params",
+                        "output_size",
+                        "trainable",
+                    ],
+                )
+            )
+        case "train":
+            pass
+        case "test":
+            pass

@@ -37,6 +37,8 @@ class Encoder(nn.Module):
                 directions=directions,
                 stride=1,
             )
+            if weights_imag_1.isnan().any():
+                print(f"weight_imag isnan")
 
             self.conv_real_1 = nn.Conv2d(
                 input_size[0],
@@ -66,52 +68,15 @@ class Encoder(nn.Module):
                 nn.BatchNorm2d(kernel_count_1),
                 nn.ReLU(),
                 nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-                nn.Conv2d(in_channels=kernel_count_1, out_channels=kernel_count_1, kernel_size=1),
+                nn.Conv2d(
+                    in_channels=kernel_count_1,
+                    out_channels=kernel_count_1,
+                    kernel_size=1,
+                ),
                 nn.ReLU(),
             )
 
             self.in_planes = kernel_count_1
-
-            # kernel_count_2, weights_real_2, weights_imag_2 = make_oriented_map(
-            #     inplanes=kernel_count_1,
-            #     kernel_size=init_kernel_size,
-            #     directions=directions,
-            #     stride=1,
-            # )
-
-            # self.conv_real_2 = nn.Conv2d(
-            #     kernel_count_1,
-            #     kernel_count_2,
-            #     kernel_size=init_kernel_size,
-            #     stride=1,
-            #     padding=init_kernel_size // 2,
-            #     bias=False,
-            # )
-            # self.conv_real_2.weight = torch.nn.Parameter(
-            #     weights_real_2, requires_grad=False
-            # )
-
-            # self.conv_imag_2 = nn.Conv2d(
-            #     kernel_count_1,
-            #     kernel_count_2,
-            #     kernel_size=init_kernel_size,
-            #     stride=1,
-            #     padding=init_kernel_size // 2,
-            #     bias=False,
-            # )
-            # self.conv_imag_2.weight = torch.nn.Parameter(
-            #     weights_imag_2, requires_grad=False
-            # )
-
-            # self.post_2 = nn.Sequential(
-            #     # nn.BatchNorm2d(kernel_count_2),
-            #     nn.ReLU(),
-            #     nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-            #     nn.Conv2d(in_channels=kernel_count_2, out_channels=kernel_count_2, kernel_size=1),
-            #     nn.ReLU(),                
-            # )
-
-            # self.in_planes = kernel_count_2
 
             print(f"self.in_planes {self.in_planes}")
 
@@ -146,8 +111,6 @@ class Encoder(nn.Module):
                     nn.Sequential(
                         self.conv_real_1 if self.use_ori_map else self.conv,
                         self.post_1,
-                        # self.conv_real_2 if self.use_ori_map else self.conv,
-                        # self.post_2,
                         self.residual_blocks,
                     ),
                     input_size,
@@ -173,31 +136,31 @@ class Encoder(nn.Module):
             _type_: _description_
         """
         if self.use_ori_map:
-            x = self.conv_real_1(x) ** 2 + self.conv_imag_1(x) ** 2
+            if x.isnan().any():
+                print("x.isnan()")
+
+            x_conv_real_1 = torch.square(self.conv_real_1(x))
+            x_conv_imag_1 = torch.square(self.conv_imag_1(x))
+            x = torch.add(x_conv_real_1, x_conv_imag_1)
+
+            if x.isnan().any():
+                print("x.isnan()")
+
             if self.use_abs:
                 x = torch.sqrt(x)
             x = self.post_1(x)
 
             x_after_v1 = x.clone()
 
-            # x = self.conv_real_2(x) ** 2 + self.conv_imag_2(x) ** 2
-            # if self.use_abs:
-            #     x = torch.sqrt(x)
-            # x = self.post_2(x)
-
-            # x_after_v2 = x.clone()
-            x_after_v2 = None
-
         else:
             x = self.conv(x)
             x_after_v1 = x.clone()
-            x_after_v2 = None
 
         x = self.residual_blocks(x)
         x = x.view(x.size(0), -1)
         mu = self.fc_mu(x)
         log_var = self.fc_log_var(x)
-        return mu, log_var, x_after_v1, x_after_v2
+        return mu, log_var, x_after_v1
 
 
 if __name__ == "__main__":
