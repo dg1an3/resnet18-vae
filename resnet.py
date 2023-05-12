@@ -94,7 +94,7 @@ class Bottleneck(nn.Module):
         if "power" in use_oriented_maps_bottleneck:
 
             conv2_planes_out, self._conv2_real, self._conv2_imag = make_oriented_map(
-                inplanes=planes,
+                in_channels=planes,
                 kernel_size=oriented_maps_bottleneck_kernel_size,
                 directions=9,
                 stride=1,
@@ -106,7 +106,7 @@ class Bottleneck(nn.Module):
         elif "phase" in use_oriented_maps_bottleneck:
 
             conv2_planes_out, self.conv2 = make_oriented_map(
-                inplanes=planes,
+                in_channels=planes,
                 kernel_size=oriented_maps_bottleneck_kernel_size,
                 directions=9,
                 stride=1,
@@ -190,7 +190,7 @@ class ResNet(nn.Module):
         if "power" in use_oriented_maps_v1:
 
             self.in_planes, self._conv1_real, self._conv1_imag = make_oriented_map(
-                inplanes=3,
+                in_channels=3,
                 kernel_size=oriented_maps_v1_kernel_size,
                 directions=9,
                 stride=1,
@@ -201,7 +201,7 @@ class ResNet(nn.Module):
         elif "phase" in use_oriented_maps_v1:
 
             self.in_planes, self.conv1 = make_oriented_map(
-                inplanes=3,
+                in_channels=3,
                 kernel_size=oriented_maps_v1_kernel_size,
                 directions=9,
                 stride=1,

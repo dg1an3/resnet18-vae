@@ -32,7 +32,7 @@ class OrientedPowerMap(nn.Module):
         self.use_batch_norm = use_batch_norm
 
         kernel_count, weights_real, weights_imag = make_oriented_map(
-            inplanes=in_channels,
+            in_channels=in_channels,
             kernel_size=self.kernel_size,
             directions=self.directions,
             # golden_mean_octaves=self.golden_mean_octaves,

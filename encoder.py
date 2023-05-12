@@ -31,18 +31,18 @@ class Encoder(nn.Module):
         self.use_abs = use_abs
         self.use_ori_map = use_ori_map
         if use_ori_map:
-            kernel_count_1, weights_real_1, weights_imag_1 = make_oriented_map(
-                inplanes=input_size[0],
+            freq_per_kernel, weights_real_1, weights_imag_1 = make_oriented_map(
+                in_channels=input_size[0],
                 kernel_size=init_kernel_size,
                 directions=directions,
-                stride=1,
+                #stride=1,
             )
             if weights_imag_1.isnan().any():
                 print(f"weight_imag isnan")
 
             self.conv_real_1 = nn.Conv2d(
                 input_size[0],
-                kernel_count_1,
+                len(freq_per_kernel),
                 kernel_size=init_kernel_size,
                 stride=2,
                 padding=init_kernel_size // 2,
@@ -54,7 +54,7 @@ class Encoder(nn.Module):
 
             self.conv_imag_1 = nn.Conv2d(
                 input_size[0],
-                kernel_count_1,
+                len(freq_per_kernel),
                 kernel_size=init_kernel_size,
                 stride=2,
                 padding=init_kernel_size // 2,
@@ -65,18 +65,18 @@ class Encoder(nn.Module):
             )
 
             self.post_1 = nn.Sequential(
-                nn.BatchNorm2d(kernel_count_1),
+                nn.BatchNorm2d(len(freq_per_kernel)),
                 nn.ReLU(),
                 nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
                 nn.Conv2d(
-                    in_channels=kernel_count_1,
-                    out_channels=kernel_count_1,
+                    in_channels=len(freq_per_kernel),
+                    out_channels=len(freq_per_kernel),
                     kernel_size=1,
                 ),
                 nn.ReLU(),
             )
 
-            self.in_planes = kernel_count_1
+            self.in_planes = len(freq_per_kernel)
 
             print(f"self.in_planes {self.in_planes}")
 
