@@ -4,3 +4,4 @@ venv310/
 data/
 __pycache__/
 weights/
+runs/

@@ -19,7 +19,7 @@ class ReverseBasicBlock(nn.Module):
         self.upsample1 = nn.Upsample(scale_factor=stride, mode="bilinear")
         self.bn1 = nn.BatchNorm2d(out_channels)
         self.conv2 = nn.ConvTranspose2d(
-            out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False
+            out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=True
         )
         self.bn2 = nn.BatchNorm2d(out_channels)
 

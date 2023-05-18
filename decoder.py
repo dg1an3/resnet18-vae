@@ -24,6 +24,8 @@ class Decoder(nn.Module):
 
         self.fc = nn.Linear(latent_dim, reduce(lambda x, y: x * y, size_from_fc))
 
+        dim_to_conv_tranpose = 40
+
         self.residual_blocks = nn.Sequential(
             ReverseBasicBlock(512, 256, stride=2),
             ReverseBasicBlock(256, 256),
@@ -32,18 +34,18 @@ class Decoder(nn.Module):
             ReverseBasicBlock(128, 64, stride=2),
             ReverseBasicBlock(64, 64),
             ReverseBasicBlock(64, 64, stride=2),
-            ReverseBasicBlock(64, 40),
+            ReverseBasicBlock(64, dim_to_conv_tranpose),
         )
 
         self.conv_transpose_1 = nn.Sequential(
             nn.Conv2d(
-                40,
+                dim_to_conv_tranpose,
                 out_channels,
                 kernel_size=final_kernel_size,
                 stride=1,
                 padding=final_kernel_size // 2,
                 #output_padding=0,
-                bias=False,
+                bias=True,
             ),
             nn.BatchNorm2d(out_channels),
             nn.Upsample(scale_factor=2, mode='bilinear'),

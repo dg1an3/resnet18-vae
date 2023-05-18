@@ -170,6 +170,6 @@ def make_oriented_map_stack_phases(
         in_channels, kernel_size, directions
     )
 
-    stacked_kernels = np.concatenate(weights_real, weights_imag, axis=0)
     stacked_freq_per_kernel = freq_per_kernel + freq_per_kernel
+    stacked_kernels = torch.concatenate((weights_real, weights_imag), dim=0)
     return stacked_freq_per_kernel, stacked_kernels

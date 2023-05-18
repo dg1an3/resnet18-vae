@@ -5,7 +5,7 @@ from torchinfo import summary
 import torchsummary
 
 from functools import reduce
-from filter_utils import make_oriented_map
+from filter_utils import make_oriented_map, make_oriented_map_stack_phases
 
 from basic_block import BasicBlock
 
@@ -23,73 +23,113 @@ class Encoder(nn.Module):
         init_kernel_size=9,
         directions=7,
         latent_dim=32,
-        use_ori_map=True,
+        use_ori_map="phased",
         use_abs=False,
     ):
         super(Encoder, self).__init__()
 
+        # TODO: move V1 to VAE and reuse V1VxLayer
         self.use_abs = use_abs
         self.use_ori_map = use_ori_map
-        if use_ori_map:
-            freq_per_kernel, weights_real_1, weights_imag_1 = make_oriented_map(
-                in_channels=input_size[0],
-                kernel_size=init_kernel_size,
-                directions=directions,
-                #stride=1,
-            )
-            if weights_imag_1.isnan().any():
-                print(f"weight_imag isnan")
+        match self.use_ori_map:
+            case "conv_7x7":
+                self.conv = nn.Sequential(
+                    nn.Conv2d(
+                        input_size[0],
+                        64,
+                        kernel_size=7,
+                        stride=2,
+                        padding=3,
+                        bias=True,
+                    ),
+                    nn.BatchNorm2d(64),
+                    nn.ReLU(),
+                    nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+                )
+                self.in_planes = 64
+            case "phased":
+                freq_per_kernel, kernels = make_oriented_map_stack_phases(
+                    in_channels=input_size[0],
+                    kernel_size=init_kernel_size,
+                    directions=directions,
+                )
+                print(f"len(freq_per_kernel) = {len(freq_per_kernel)}")
 
-            self.conv_real_1 = nn.Conv2d(
-                input_size[0],
-                len(freq_per_kernel),
-                kernel_size=init_kernel_size,
-                stride=2,
-                padding=init_kernel_size // 2,
-                bias=False,
-            )
-            self.conv_real_1.weight = torch.nn.Parameter(
-                weights_real_1, requires_grad=False
-            )
+                conv_1 = nn.Conv2d(
+                    input_size[0],
+                    len(freq_per_kernel),
+                    kernel_size=init_kernel_size,
+                    stride=2,
+                    padding=init_kernel_size // 2,
+                    bias=True,
+                )
+                conv_1.weight = torch.nn.Parameter(kernels, requires_grad=False)
 
-            self.conv_imag_1 = nn.Conv2d(
-                input_size[0],
-                len(freq_per_kernel),
-                kernel_size=init_kernel_size,
-                stride=2,
-                padding=init_kernel_size // 2,
-                bias=False,
-            )
-            self.conv_imag_1.weight = torch.nn.Parameter(
-                weights_imag_1, requires_grad=False
-            )
+                self.conv = nn.Sequential(
+                    conv_1,
+                    nn.BatchNorm2d(len(freq_per_kernel)),
+                    nn.ReLU(),
+                    nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+                    nn.Conv2d(
+                        in_channels=len(freq_per_kernel),
+                        out_channels=len(freq_per_kernel) // 2,
+                        kernel_size=1,
+                    ),
+                    nn.ReLU(),
+                )
 
-            self.post_1 = nn.Sequential(
-                nn.BatchNorm2d(len(freq_per_kernel)),
-                nn.ReLU(),
-                nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-                nn.Conv2d(
-                    in_channels=len(freq_per_kernel),
-                    out_channels=len(freq_per_kernel),
-                    kernel_size=1,
-                ),
-                nn.ReLU(),
-            )
+                self.in_planes = len(freq_per_kernel) // 2
 
-            self.in_planes = len(freq_per_kernel)
+            case "unphased":
+                freq_per_kernel, weights_real_1, weights_imag_1 = make_oriented_map(
+                    in_channels=input_size[0],
+                    kernel_size=init_kernel_size,
+                    directions=directions,
+                    # stride=1,
+                )
 
-            print(f"self.in_planes {self.in_planes}")
+                self.conv_real_1 = nn.Conv2d(
+                    input_size[0],
+                    len(freq_per_kernel),
+                    kernel_size=init_kernel_size,
+                    stride=2,
+                    padding=init_kernel_size // 2,
+                    bias=True,
+                )
+                self.conv_real_1.weight = torch.nn.Parameter(
+                    weights_real_1, requires_grad=False
+                )
 
-        else:
-            self.conv = nn.Sequential(
-                nn.Conv2d(
-                    input_size[0], 64, kernel_size=7, stride=2, padding=3, bias=False
-                ),
-                nn.BatchNorm2d(64),
-                nn.ReLU(),
-                nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-            )
-            self.in_planes = 64
+                self.conv_imag_1 = nn.Conv2d(
+                    input_size[0],
+                    len(freq_per_kernel),
+                    kernel_size=init_kernel_size,
+                    stride=2,
+                    padding=init_kernel_size // 2,
+                    bias=True,
+                )
+                self.conv_imag_1.weight = torch.nn.Parameter(
+                    weights_imag_1, requires_grad=False
+                )
+
+                self.post_1 = nn.Sequential(
+                    nn.BatchNorm2d(len(freq_per_kernel)),
+                    nn.ReLU(),
+                    nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+                    nn.Conv2d(
+                        in_channels=len(freq_per_kernel),
+                        out_channels=len(freq_per_kernel),
+                        kernel_size=1,
+                    ),
+                    nn.ReLU(),
+                )
+
+                self.in_planes = len(freq_per_kernel)
+
+                print(f"self.in_planes {self.in_planes}")
+
+            case _:
+                raise ("unknown")
 
         self.residual_blocks = nn.Sequential(
             BasicBlock(self.in_planes, 64),
@@ -106,11 +146,14 @@ class Encoder(nn.Module):
         if fixed_size:
             self.input_size_to_fc = [512, 16, 16]
         else:
+            # TODO perform sizing by calling residual block
             self.input_size_to_fc = (
                 torchsummary.summary(
                     nn.Sequential(
-                        self.conv_real_1 if self.use_ori_map else self.conv,
-                        self.post_1,
+                        self.conv_real_1
+                        if self.use_ori_map == "unphased"
+                        else self.conv,
+                        # self.post_1,
                         self.residual_blocks,
                     ),
                     input_size,
@@ -135,26 +178,21 @@ class Encoder(nn.Module):
         Returns:
             _type_: _description_
         """
-        if self.use_ori_map:
-            if x.isnan().any():
-                print("x.isnan()")
+        match self.use_ori_map:
+            case "unphased":
+                x_conv_real_1 = torch.square(self.conv_real_1(x))
+                x_conv_imag_1 = torch.square(self.conv_imag_1(x))
+                x = torch.add(x_conv_real_1, x_conv_imag_1)
 
-            x_conv_real_1 = torch.square(self.conv_real_1(x))
-            x_conv_imag_1 = torch.square(self.conv_imag_1(x))
-            x = torch.add(x_conv_real_1, x_conv_imag_1)
+                if self.use_abs:
+                    x = torch.sqrt(x)
+                x = self.post_1(x)
 
-            if x.isnan().any():
-                print("x.isnan()")
+                x_after_v1 = x.clone()
 
-            if self.use_abs:
-                x = torch.sqrt(x)
-            x = self.post_1(x)
-
-            x_after_v1 = x.clone()
-
-        else:
-            x = self.conv(x)
-            x_after_v1 = x.clone()
+            case "phased" | "conv_7x7":
+                x = self.conv(x)
+                x_after_v1 = x.clone()
 
         x = self.residual_blocks(x)
         x = x.view(x.size(0), -1)

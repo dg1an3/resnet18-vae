@@ -1,3 +1,4 @@
+import logging
 import torch
 from torchvision import transforms
 from pathlib import Path
@@ -41,11 +42,15 @@ def get_clahe_transforms(clip_limit=4, clahe_tile_size=8, input_size=448):
 
     return transforms.Compose(
         [
-            transforms.ToPILImage(),
-            transforms.Resize((input_size, input_size)),
-            transforms.Grayscale(),
-            transforms.Lambda(np.array),
-            transforms.Lambda(clahe.apply),
+            # transforms.Grayscale(),
+            # transforms.ToTensor(),
+            # transforms.Normalize((0.5,),(10.0,)),
+            # transforms.Lambda(lambda x: x*255.0),
+            # transforms.ToPILImage(),
+            # transforms.Resize((input_size, input_size)),
+
+            # transforms.Lambda(np.array),
+            # transforms.Lambda(clahe.apply),
             transforms.ToTensor(),
         ]
     )
@@ -71,12 +76,27 @@ class Cxr8Dataset(Dataset):
 
         self.transform = transform
 
+        clip_limit=4
+        clahe_tile_size=8
+        input_size=448
+        self.clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(clahe_tile_size, clahe_tile_size)
+    )
+
+
     def read_img_file(self, img_name):
         img_name = self.root_path / "images" / img_name
         img_name = str(img_name)
         # print(f"img_name {img_name}")
 
         image = cv2.imread(img_name, cv2.IMREAD_GRAYSCALE)
+        image = cv2.resize(image, (448,448))
+        # image = cv2.normalize(image, None, 0.0, 1.0, cv2.NORM_MINMAX)
+        image = self.clahe.apply(image)
+        image_min, image_max, image_avg, image_std = np.min(image), np.max(image), np.average(image), np.std(image)
+        logging.debug(f"image min/max/avg = {image_min}, {image_max}, {image_avg:.4f}, {image_std:.4f}")
+        #image = (image + (128.0 - image_avg))/256.0
+        image = 0.5 + (image - image_avg)/(4.0*image_std)
+        image = image.astype(np.float32)
         return image
 
     def __len__(self):
