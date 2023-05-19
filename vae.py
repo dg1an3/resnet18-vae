@@ -50,11 +50,11 @@ def vae_loss(
         _type_: _description_
     """
 
-    x = torch.clamp(x,  1e-6, 1.0-1e-6)
-    recon_x = torch.clamp(recon_x, 1e-6, 1.0-1e-6)
+    x = torch.clamp(x, 1e-6, 1.0 - 1e-6)
+    recon_x = torch.clamp(recon_x, 1e-6, 1.0 - 1e-6)
     if x_after_v1 is not None:
-        x_after_v1 = torch.clamp(x_after_v1,  1e-6, 1.0-1e-6)
-        x_before_v1 = torch.clamp(x_before_v1,  1e-6, 1.0-1e-6)
+        x_after_v1 = torch.clamp(x_after_v1, 1e-6, 1.0 - 1e-6)
+        x_before_v1 = torch.clamp(x_before_v1, 1e-6, 1.0 - 1e-6)
 
     match v1_weight:
         case None:
@@ -70,13 +70,13 @@ def vae_loss(
         case "binary_cross_entropy":
             recon_loss = F.binary_cross_entropy(recon_x, x, reduction="mean")
             recon_loss += F.l1_loss(recon_x, x)
-            #recon_loss = F.kl_div(x_recon, x, reduction="batchmean")
+            # recon_loss = F.kl_div(x_recon, x, reduction="batchmean")
             if x_after_v1 is not None:
                 recon_loss += F.binary_cross_entropy(
-                     x_after_v1, x_before_v1, reduction="mean"
+                    x_after_v1, x_before_v1, reduction="mean"
                 )
                 recon_loss += F.l1_loss(x_after_v1, x_before_v1, reduction="mean")
-                #recon_loss += F.kl_div(x_before_v1, x_after_v1, reduction="batchmean")
+                # recon_loss += F.kl_div(x_before_v1, x_after_v1, reduction="batchmean")
         case "l1_loss":
             recon_loss = F.l1_loss(recon_x, x)
             if x_after_v1 is not None:
@@ -282,6 +282,12 @@ class VAE(nn.Module):
         return result_dict["x_recon"]
 
 
+def train_vae():
+    pass
+
+def infer_vae():
+    pass
+
 if "__main__" == __name__:
     log_base = datetime.date.today().strftime("%Y%m%d")
     logging.basicConfig(
@@ -289,189 +295,203 @@ if "__main__" == __name__:
         format="%(asctime)s|%(levelname)s|%(module)s|%(funcName)s|%(message)s",
         level=logging.DEBUG,
     )
-    match sys.argv:
-        case [_, "train"]:
-            data_temp_path = os.environ["DATA_TEMP"]
-            root_path = Path(data_temp_path) / "cxr8"
 
-            transforms = get_clahe_transforms(clahe_tile_size=8, input_size=448)
-            train_dataset = Cxr8Dataset(root_path, transform=transforms)
+    import argparse
 
-            input_size = train_dataset[0]["image"].shape
-            logging.info(f"input_size = {input_size}")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--train", action="store_true", help="perform a single epoch of training"
+    )
+    parser.add_argument(
+        "--infer",
+        type=str,
+        help="performance inference on images in specified directory",
+    )
+    args = parser.parse_args()
 
-            train_loader = DataLoader(train_dataset, batch_size=48, shuffle=True)
-            logging.info(f"train_dataset length = {len(train_dataset)}")
+    if args.train:
+        # TODO: move to train function
+        data_temp_path = os.environ["DATA_TEMP"]
+        root_path = Path(data_temp_path) / "cxr8"
 
-            KERNEL_SIZE = 11
-            DIRECTIONS = 5
-            LATENT_DIM = 96  # 64
+        transforms = get_clahe_transforms(clahe_tile_size=8, input_size=448)
+        train_dataset = Cxr8Dataset(root_path, transform=transforms)
 
-            # model = VAE((1 if dataset_name == "cxr8" else 3, 224, 224), latent_dim).to(device)
-            model = VAE(
-                input_size,
-                init_kernel_size=KERNEL_SIZE,
-                latent_dim=LATENT_DIM,
-                use_stn=True,
+        input_size = train_dataset[0]["image"].shape
+        logging.info(f"input_size = {input_size}")
+
+        train_loader = DataLoader(train_dataset, batch_size=48, shuffle=True)
+        logging.info(f"train_dataset length = {len(train_dataset)}")
+
+        KERNEL_SIZE = 11
+        DIRECTIONS = 5
+        LATENT_DIM = 96  # 64
+
+        # model = VAE((1 if dataset_name == "cxr8" else 3, 224, 224), latent_dim).to(device)
+        model = VAE(
+            input_size,
+            init_kernel_size=KERNEL_SIZE,
+            latent_dim=LATENT_DIM,
+            use_stn=True,
+        )
+        logging.info(
+            summary(
+                model,
+                input_size=(37, input_size[0], input_size[1], input_size[2]),
+                depth=10,
+                col_names=[
+                    "input_size",
+                    "kernel_size",
+                    "mult_adds",
+                    "num_params",
+                    "output_size",
+                    "trainable",
+                ],
             )
-            logging.info(
-                summary(
-                    model,
-                    input_size=(37, input_size[0], input_size[1], input_size[2]),
-                    depth=10,
-                    col_names=[
-                        "input_size",
-                        "kernel_size",
-                        "mult_adds",
-                        "num_params",
-                        "output_size",
-                        "trainable",
-                    ],
+        )
+
+        device = torch.device("cuda" if torch.cuda.is_available else "cpu")
+        logging.info(device)
+
+        model = model.to(device)
+        logging.info(set([p.device for p in model.parameters()]))
+
+        num_epochs = 3
+
+        optimizer = optim.Adam(model.parameters(), lr=1e-4)
+
+        # TODO: get this from the VAE construction
+        v1_weight = torch.tensor(
+            [1.0**2] * 8
+            + [0.5**2] * 8
+            + [0.25**2] * 8
+            + [0.125**2] * 8
+            + [0.06125**2] * 8
+        )
+        logging.info(f"v1_weight = {v1_weight}")
+
+        # torch.autograd.set_detect_anomaly(True)
+
+        start_epoch = 0
+        epoch_files = sorted(list(Path("runs").glob("*_epoch_*.zip")))
+        if len(epoch_files) > 0:
+            dct = torch.load(epoch_files[-1])
+            start_epoch = dct["epoch"]
+            model.load_state_dict(dct["model_state_dict"])
+            optimizer.load_state_dict(dct["optimizer_state_dict"])
+
+        # TODO: only execute single epoch
+        for epoch in range(start_epoch, start_epoch + num_epochs):
+            model.train()
+            train_loss = 0
+            train_count = 0
+            for batch_idx, batch in enumerate(train_loader):
+                x = batch["image"]
+
+                x = x.to(device)
+                optimizer.zero_grad()
+
+                result_dict = model.forward_dict(x)
+                x_recon = result_dict["x_recon"]
+                # TODO: can these be passed as **params?
+                recon_loss, kldiv_loss, loss = vae_loss(
+                    x,
+                    x_recon,
+                    result_dict["mu"],
+                    result_dict["log_var"],
+                    v1_weight,
+                    result_dict["x_after_v1"],
+                    result_dict["x_before_v1"],
+                    recon_loss_metric="binary_cross_entropy",
+                    # recon_loss_metric="l1_loss",
+                    beta=0.1,
                 )
-            )
 
-            device = torch.device("cuda" if torch.cuda.is_available else "cpu")
-            logging.info(device)
-
-            model = model.to(device)
-            logging.info(set([p.device for p in model.parameters()]))
-
-            num_epochs = 3
-
-            optimizer = optim.Adam(model.parameters(), lr=1e-4)
-
-            # TODO: get this from the VAE construction
-            v1_weight = torch.tensor(
-                [1.0**1] * 8
-                + [0.5**1] * 8
-                + [0.25**1] * 8
-                + [0.125**1] * 8
-                + [0.06125**1] * 8
-            )
-            logging.info(f"v1_weight = {v1_weight}")
-
-            # torch.autograd.set_detect_anomaly(True)
-
-            start_epoch = 0
-            epoch_files = sorted(list(Path("runs").glob("*_epoch_*.zip")))
-            if len(epoch_files) > 0:
-                dct = torch.load(epoch_files[-1])
-                start_epoch = dct["epoch"]
-                model.load_state_dict(dct["model_state_dict"])
-                optimizer.load_state_dict(dct["optimizer_state_dict"])
-
-            for epoch in range(start_epoch, start_epoch + num_epochs):
-                model.train()
-                train_loss = 0
-                train_count = 0
-                for batch_idx, batch in enumerate(train_loader):
-                    x = batch["image"]
-
-                    x = x.to(device)
-                    optimizer.zero_grad()
-
-                    result_dict = model.forward_dict(x)
-                    x_recon = result_dict["x_recon"]
-                    # TODO: can these be passed as **params?
-                    recon_loss, kldiv_loss, loss = vae_loss(
-                        x,
-                        x_recon,
-                        result_dict["mu"],
-                        result_dict["log_var"],
-                        v1_weight,
-                        result_dict["x_after_v1"],
-                        result_dict["x_before_v1"],
-                        recon_loss_metric="binary_cross_entropy",
-                        # recon_loss_metric="l1_loss",
-                        beta=0.1,
+                if train_count % 10 == 9:
+                    fig, ax = plt.subplots(3, 5, figsize=(20, 12))
+                    fig.suptitle(
+                        f"Epoch {epoch+1}/{start_epoch + num_epochs} Batch {batch_idx}"
                     )
+                    fig.patch.set_facecolor("xkcd:gray")
 
-                    if train_count % 10 == 9:
-                        fig, ax = plt.subplots(3, 5, figsize=(20, 12))
-                        fig.suptitle(
-                            f"Epoch {epoch+1}/{start_epoch + num_epochs} Batch {batch_idx}"
-                        )
-                        fig.patch.set_facecolor("xkcd:gray")
+                    # fig.show()
+                    # TODO: move this to output to tensorboard
+                    x = x[0:5].clone()
 
-                        # fig.show()
-                        # TODO: move this to output to tensorboard
-                        x = x[0:5].clone()
+                    x_xformed = model.stn(x) if model.use_stn else x
+                    x_xformed = x_xformed.detach().cpu().numpy()
 
-                        x_xformed = model.stn(x) if model.use_stn else x
-                        x_xformed = x_xformed.detach().cpu().numpy()
+                    x = x.detach().cpu().numpy()
 
-                        x = x.detach().cpu().numpy()
+                    x_recon = x_recon[0:5].clone()
+                    x_recon = x_recon.detach().cpu().numpy()
 
-                        x_recon = x_recon[0:5].clone()
-                        x_recon = x_recon.detach().cpu().numpy()
+                    # additive blending
+                    blend_data = np.stack([x_recon, x_xformed, x_recon], axis=-1)
 
-                        # additive blending
-                        blend_data = np.stack([x_recon, x_xformed, x_recon], axis=-1)
+                    # print(v.shape)
+                    for n in range(5):
+                        ax[0][n].imshow(np.squeeze(x[n]), cmap="bone")
+                        ax[1][n].imshow(np.squeeze(blend_data[n]))  # cmap='bone')
+                        ax[2][n].imshow(np.squeeze(x_recon[n]), cmap="bone")
 
-                        # print(v.shape)
-                        for n in range(5):
-                            ax[0][n].imshow(np.squeeze(x[n]), cmap="bone")
-                            ax[1][n].imshow(np.squeeze(blend_data[n]))  # cmap='bone')
-                            ax[2][n].imshow(np.squeeze(x_recon[n]), cmap="bone")
+                    # drawing updated values
+                    # fig.canvas.draw()
 
-                        # drawing updated values
-                        # fig.canvas.draw()
+                    # This will run the GUI event
+                    # loop until all UI events
+                    # currently waiting have been processed
+                    # fig.canvas.flush_events()
 
-                        # This will run the GUI event
-                        # loop until all UI events
-                        # currently waiting have been processed
-                        # fig.canvas.flush_events()
+                    fig.tight_layout()
+                    fig.savefig(f"runs/{log_base}_current.png")
+                    plt.close(fig)
 
-                        fig.tight_layout()
-                        fig.savefig(f"runs/{log_base}_current.png")
-                        plt.close(fig)
+                loss.backward()
+                # print(f"loss = {loss}; {'nan' if loss.isnan() else ''}")
 
-                    loss.backward()
-                    # print(f"loss = {loss}; {'nan' if loss.isnan() else ''}")
+                train_loss += loss.item()
+                train_count += 1.0
 
-                    train_loss += loss.item()
-                    train_count += 1.0
+                # print(list(model.parameters()))
+                # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
 
-                    # print(list(model.parameters()))
-                    # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                    optimizer.step()
-
-                    logging.info(f"Epoch {epoch+1} of {num_epochs}: Batch {batch_idx}")
-                    logging.info(
-                        f"Loss: {train_loss / train_count:.6f} ({recon_loss:.6f}/{kldiv_loss:.6f})"
-                    )
-
-                logging.info(f"saving model for epoch {epoch+1}")
-                torch.save(
-                    {
-                        "epoch": epoch + 1,
-                        "model_state_dict": model.state_dict(),
-                        "optimizer_state_dict": optimizer.state_dict(),
-                        "loss": loss,
-                    },
-                    f"runs/{log_base}_epoch_{epoch+1}.zip",
+                logging.info(f"Epoch {epoch+1} of {num_epochs}: Batch {batch_idx}")
+                logging.info(
+                    f"Loss: {train_loss / train_count:.6f} ({recon_loss:.6f}/{kldiv_loss:.6f})"
                 )
 
-            logging.info("completed training")
-
-        case [_, "infer"]:
-            pass
-
-        case [_]:
-            # TODO: print help
-            vae = VAE((1, 224, 224), 128)
-            print(
-                summary(
-                    vae,
-                    input_size=(37, 1, 224, 224),
-                    depth=10,
-                    col_names=[
-                        "input_size",
-                        "kernel_size",
-                        "mult_adds",
-                        "num_params",
-                        "output_size",
-                        "trainable",
-                    ],
-                )
+            logging.info(f"saving model for epoch {epoch+1}")
+            torch.save(
+                {
+                    "epoch": epoch + 1,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "loss": loss,
+                },
+                f"runs/{log_base}_epoch_{epoch+1}.zip",
             )
+
+        logging.info("completed training")
+
+    if args.infer:
+        print(f"inferring images in {args.infer}")
+
+        # TODO: print help
+        vae = VAE((1, 224, 224), 128)
+        print(
+            summary(
+                vae,
+                input_size=(37, 1, 224, 224),
+                depth=10,
+                col_names=[
+                    "input_size",
+                    "kernel_size",
+                    "mult_adds",
+                    "num_params",
+                    "output_size",
+                    "trainable",
+                ],
+            )
+        )
