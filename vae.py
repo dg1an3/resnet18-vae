@@ -282,22 +282,7 @@ class VAE(nn.Module):
         return result_dict["x_recon"]
 
 
-def train_vae():
-    """perform training of single epoch"""
-    # TODO: move dataset preparation to another function
-    data_temp_path = os.environ["DATA_TEMP"]
-    root_path = Path(data_temp_path) / "cxr8"
-
-    # TODO: do we still need transforms
-    transforms = get_clahe_transforms(clahe_tile_size=8, input_size=448)
-    train_dataset = Cxr8Dataset(root_path, transform=transforms)
-
-    input_size = train_dataset[0]["image"].shape
-    logging.info(f"input_size = {input_size}")
-
-    train_loader = DataLoader(train_dataset, batch_size=48, shuffle=True)
-    logging.info(f"train_dataset length = {len(train_dataset)}")
-
+def load_model(input_size, device):
     KERNEL_SIZE = 11
     DIRECTIONS = 5
     LATENT_DIM = 96  # 64
@@ -309,6 +294,17 @@ def train_vae():
         latent_dim=LATENT_DIM,
         use_stn=True,
     )
+    model = model.to(device)
+
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+
+    start_epoch = 0
+    epoch_files = sorted(list(Path("runs").glob("*_epoch_*.zip")))
+    if len(epoch_files) > 0:
+        dct = torch.load(epoch_files[-1], map_location=device)
+        start_epoch = dct["epoch"]
+        model.load_state_dict(dct["model_state_dict"])
+        optimizer.load_state_dict(dct["optimizer_state_dict"])
 
     logging.info(
         summary(
@@ -326,35 +322,88 @@ def train_vae():
         )
     )
 
+    return model, optimizer, start_epoch
+
+
+def plot_samples(
+    model,
+    start_epoch,
+    train_loss,
+    train_count,
+    batch_idx,
+    x,
+    x_recon,
+    recon_loss,
+    kldiv_loss,
+):
+    fig, ax = plt.subplots(3, 5, figsize=(20, 12))
+    fig.suptitle(
+        f"Epoch {start_epoch+1} Batch {batch_idx} Loss: {train_loss / train_count:.6f} ({recon_loss:.6f}/{kldiv_loss:.6f})"
+    )
+    fig.patch.set_facecolor("xkcd:gray")
+
+    # fig.show()
+    # TODO: move this to output to tensorboard
+    x = x[0:5].clone()
+
+    x_xformed = model.stn(x) if model.use_stn else x
+    x_xformed = x_xformed.detach().cpu().numpy()
+
+    x = x.detach().cpu().numpy()
+
+    x_recon = x_recon[0:5].clone()
+    x_recon = x_recon.detach().cpu().numpy()
+
+    # additive blending
+    blend_data = np.stack([x_recon, x_xformed, x_recon], axis=-1)
+
+    # print(v.shape)
+    for n in range(5):
+        ax[0][n].imshow(np.squeeze(x[n]), cmap="bone")
+        ax[1][n].imshow(np.squeeze(blend_data[n]))  # cmap='bone')
+        ax[2][n].imshow(np.squeeze(x_recon[n]), cmap="bone")
+
+    fig.tight_layout()
+    fig.savefig(f"runs/{log_base}_current.png")
+    plt.close(fig)
+
+
+def train_vae():
+    """perform training of single epoch"""
+    # TODO: move dataset preparation to another function
+    data_temp_path = os.environ["DATA_TEMP"]
+    root_path = Path(data_temp_path) / "cxr8"
+
+    # TODO: do we still need transforms
+    transforms = get_clahe_transforms(clahe_tile_size=8, input_size=448)
+    train_dataset = Cxr8Dataset(root_path, transform=transforms)
+
+    input_size = train_dataset[0]["image"].shape
+    logging.info(f"input_size = {input_size}")
+
+    train_loader = DataLoader(train_dataset, batch_size=48, shuffle=True)
+    logging.info(f"train_dataset length = {len(train_dataset)}")
+
     device = torch.device("cuda" if torch.cuda.is_available else "cpu")
     logging.info(device)
+
+    model, optimizer, start_epoch = load_model(input_size, device)
 
     model = model.to(device)
     logging.info(set([p.device for p in model.parameters()]))
 
-    # num_epochs = 3
-
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
-
     # TODO: get this from the VAE construction
     v1_weight = torch.tensor(
-        [1.0**0] * 8
-        + [0.5**0] * 8
-        + [0.25**0] * 8
-        + [0.125**0] * 8
-        + [0.06125**0] * 8
+        [1.0**1] * 8
+        + [0.5**1] * 8
+        + [0.25**1] * 8
+        + [0.125**1] * 8
+        + [0.06125**1] * 8
     )
+    v1_weight = v1_weight.to(device)
     logging.info(f"v1_weight = {v1_weight}")
 
     # torch.autograd.set_detect_anomaly(True)
-
-    start_epoch = 0
-    epoch_files = sorted(list(Path("runs").glob("*_epoch_*.zip")))
-    if len(epoch_files) > 0:
-        dct = torch.load(epoch_files[-1])
-        start_epoch = dct["epoch"]
-        model.load_state_dict(dct["model_state_dict"])
-        optimizer.load_state_dict(dct["optimizer_state_dict"])
 
     # TODO: only execute single epoch
     model.train()
@@ -364,6 +413,7 @@ def train_vae():
         x = batch["image"]
 
         x = x.to(device)
+
         optimizer.zero_grad()
 
         result_dict = model.forward_dict(x)
@@ -379,50 +429,31 @@ def train_vae():
             result_dict["x_before_v1"],
             recon_loss_metric="binary_cross_entropy",
             # recon_loss_metric="l1_loss",
-            beta=0.1,
+            beta=0.5,
         )
 
         if train_count % 10 == 9:
-            fig, ax = plt.subplots(3, 5, figsize=(20, 12))
-            fig.suptitle(
-                f"Epoch {start_epoch+1} Batch {batch_idx} Loss: {train_loss / train_count:.6f} ({recon_loss:.6f}/{kldiv_loss:.6f})"
+            plot_samples(
+                model,
+                start_epoch,
+                train_loss,
+                train_count,
+                batch_idx,
+                x,
+                x_recon,
+                recon_loss,
+                kldiv_loss,
             )
-            fig.patch.set_facecolor("xkcd:gray")
-
-            # fig.show()
-            # TODO: move this to output to tensorboard
-            x = x[0:5].clone()
-
-            x_xformed = model.stn(x) if model.use_stn else x
-            x_xformed = x_xformed.detach().cpu().numpy()
-
-            x = x.detach().cpu().numpy()
-
-            x_recon = x_recon[0:5].clone()
-            x_recon = x_recon.detach().cpu().numpy()
-
-            # additive blending
-            blend_data = np.stack([x_recon, x_xformed, x_recon], axis=-1)
-
-            # print(v.shape)
-            for n in range(5):
-                ax[0][n].imshow(np.squeeze(x[n]), cmap="bone")
-                ax[1][n].imshow(np.squeeze(blend_data[n]))  # cmap='bone')
-                ax[2][n].imshow(np.squeeze(x_recon[n]), cmap="bone")
-
-            fig.tight_layout()
-            fig.savefig(f"runs/{log_base}_current.png")
-            plt.close(fig)
 
         loss.backward()
         # print(f"loss = {loss}; {'nan' if loss.isnan() else ''}")
 
-        train_loss += loss.item()
-        train_count += 1.0
-
         # print(list(model.parameters()))
         # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
+
+        train_loss += loss.item()
+        train_count += 1.0
 
         logging.info(f"Epoch {start_epoch+1}: Batch {batch_idx}")
         logging.info(
