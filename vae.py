@@ -1,4 +1,4 @@
-import sys, os, datetime, logging
+import os, datetime, logging
 from pathlib import Path
 
 import numpy as np
@@ -25,16 +25,24 @@ from encoder import Encoder
 from decoder import Decoder
 
 
+def clamp_01(x, eps=1e-6):
+    if x is None:
+        return None
+
+    return torch.clamp(x, eps, 1.0 - eps)
+
+
+# TODO: vae_loss kwargs
 def vae_loss(
-    recon_x,
+    recon_loss_metrics,  # (F.binary_cross_entropy,F.l1_loss)
+    beta,
+    x_recon,
     x,
     mu,
     log_var,
     v1_weight=None,
     x_after_v1=None,
     x_before_v1=None,
-    recon_loss_metric="l1_loss",
-    beta=1.0,
 ):
     """_summary_
 
@@ -50,11 +58,10 @@ def vae_loss(
         _type_: _description_
     """
 
-    x = torch.clamp(x, 1e-6, 1.0 - 1e-6)
-    recon_x = torch.clamp(recon_x, 1e-6, 1.0 - 1e-6)
-    if x_after_v1 is not None:
-        x_after_v1 = torch.clamp(x_after_v1, 1e-6, 1.0 - 1e-6)
-        x_before_v1 = torch.clamp(x_before_v1, 1e-6, 1.0 - 1e-6)
+    x = clamp_01(x)
+    x_recon = clamp_01(x_recon)
+    x_after_v1 = clamp_01(x_after_v1)
+    x_before_v1 = clamp_01(x_before_v1)
 
     match v1_weight:
         case None:
@@ -66,33 +73,21 @@ def vae_loss(
         case _:
             raise ("unknown weight type")
 
-    match recon_loss_metric:
-        case "binary_cross_entropy":
-            recon_loss = F.binary_cross_entropy(recon_x, x, reduction="mean")
-            recon_loss += F.l1_loss(recon_x, x)
-            # recon_loss = F.kl_div(x_recon, x, reduction="batchmean")
-            if x_after_v1 is not None:
-                recon_loss += F.binary_cross_entropy(
-                    x_after_v1, x_before_v1, reduction="mean"
-                )
-                recon_loss += F.l1_loss(x_after_v1, x_before_v1, reduction="mean")
-                # recon_loss += F.kl_div(x_before_v1, x_after_v1, reduction="batchmean")
-        case "l1_loss":
-            recon_loss = F.l1_loss(recon_x, x)
-            if x_after_v1 is not None:
-                if v1_weight is None:
-                    recon_loss += F.l1_loss(x_after_v1, x_before_v1, reduction="mean")
-                else:
-                    v1_loss = F.l1_loss(x_after_v1, x_before_v1, reduction="none")
-                    v1_loss = torch.mean(v1_loss, (0, -1, -2))
-                    v1_loss = torch.mul(v1_weight, v1_loss)
-                    recon_loss += torch.mean(v1_loss)
-        case "mse_loss":
-            recon_loss = F.mse_loss(recon_x, x)
-            if x_after_v1 is not None:
-                recon_loss += F.mse_loss(x_after_v1, x_before_v1)
-        case _:
-            raise ("Unrecognized loss metric")
+    recon_loss = 0.0
+    for loss_func in recon_loss_metrics:
+        recon_loss += loss_func(x, x_recon, reduction="mean")
+        if x_after_v1 is not None:
+            v1_loss = loss_func(
+                x_after_v1,
+                x_before_v1,
+                reduction="mean" if v1_weight is None else "none",
+            )
+            if v1_weight is not None:
+                v1_loss = torch.mean(v1_loss, (0, -1, -2))
+                v1_loss = torch.mul(v1_weight, v1_loss)
+                v1_loss = torch.mean(v1_loss)
+
+            recon_loss += v1_loss
 
     kld_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
     return recon_loss, kld_loss, recon_loss + beta * kld_loss
@@ -192,7 +187,7 @@ class VAE(nn.Module):
             theta[:, 0, 1] = torch.clamp(theta[:, 0, 1].clone(), -0.001, 0.001)
             theta[:, 1, 0] = torch.clamp(theta[:, 1, 0].clone(), -0.001, 0.001)
 
-            theta[:, :, 2] = torch.clamp(theta[:, :, 2].clone(), -0.2, 0.2)
+            theta[:, :, 2] = torch.clamp(theta[:, :, 2].clone(), -0.001, 0.001)
 
         use_shift_center = False
         if use_shift_center:
@@ -221,6 +216,8 @@ class VAE(nn.Module):
         # and apply
         grid = F.affine_grid(theta, x.size())
         x = F.grid_sample(x, grid, padding_mode="reflection")
+
+        # TODO: move STN resampling to dataset (with metadata csv)
 
         return x
 
@@ -389,26 +386,16 @@ def train_vae():
 
     model, optimizer, start_epoch = load_model(input_size, device)
 
+    # TODO: is this still needed?
     model = model.to(device)
     logging.info(set([p.device for p in model.parameters()]))
 
-    # TODO: get this from the VAE construction
-    v1_weight = torch.tensor(
-        [1.0**1] * 8
-        + [0.5**1] * 8
-        + [0.25**1] * 8
-        + [0.125**1] * 8
-        + [0.06125**1] * 8
-    )
-    v1_weight = v1_weight.to(device)
-    logging.info(f"v1_weight = {v1_weight}")
-
     # torch.autograd.set_detect_anomaly(True)
 
-    # TODO: only execute single epoch
+    # DONE: only execute single epoch
     model.train()
     train_loss = 0
-    train_count = 0
+    train_count = -10
     for batch_idx, batch in enumerate(train_loader):
         x = batch["image"]
 
@@ -417,19 +404,23 @@ def train_vae():
         optimizer.zero_grad()
 
         result_dict = model.forward_dict(x)
-        x_recon = result_dict["x_recon"]
-        # TODO: can these be passed as **params?
+
+        # TODO: get this from the VAE forward_dict
+        v1_weight = torch.tensor(
+            [1.0**1] * 8
+            + [0.5**1] * 8
+            + [0.25**1] * 8
+            + [0.125**1] * 8
+            + [0.06125**1] * 8
+        )
+        logging.info(f"v1_weight = {v1_weight}")
+        result_dict["v1_weight"] = v1_weight.to(device)
+
         recon_loss, kldiv_loss, loss = vae_loss(
-            x,
-            x_recon,
-            result_dict["mu"],
-            result_dict["log_var"],
-            v1_weight,
-            result_dict["x_after_v1"],
-            result_dict["x_before_v1"],
-            recon_loss_metric="binary_cross_entropy",
-            # recon_loss_metric="l1_loss",
+            recon_loss_metrics=(F.binary_cross_entropy, F.l1_loss),
             beta=0.5,
+            x=x,
+            **result_dict,
         )
 
         if train_count % 10 == 9:
@@ -440,7 +431,7 @@ def train_vae():
                 train_count,
                 batch_idx,
                 x,
-                x_recon,
+                result_dict["x_recon"],
                 recon_loss,
                 kldiv_loss,
             )
@@ -448,12 +439,11 @@ def train_vae():
         loss.backward()
         # print(f"loss = {loss}; {'nan' if loss.isnan() else ''}")
 
-        # print(list(model.parameters()))
-        # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
 
-        train_loss += loss.item()
-        train_count += 1.0
+        # bit of logic to wait before starting to accumulate loss
+        train_count += 1.0 if train_count != -1.0 else 2.0
+        train_loss = loss.item() + (train_loss if train_count > 0.0 else 0.0)
 
         logging.info(f"Epoch {start_epoch+1}: Batch {batch_idx}")
         logging.info(
@@ -474,8 +464,8 @@ def train_vae():
     logging.info("completed training")
 
 
-def infer_vae():
-    print(f"inferring images in {args.infer}")
+def infer_vae(source_dir):
+    print(f"inferring images in {source_dir}")
 
     # TODO: print help
     vae = VAE((1, 224, 224), 128)
@@ -510,6 +500,7 @@ if "__main__" == __name__:
     )
     args = parser.parse_args()
 
+    # TODO: log config via yaml
     log_base = datetime.date.today().strftime("%Y%m%d")
     logging.basicConfig(
         filename=f"runs/{log_base}_vae_main.log",
@@ -521,4 +512,4 @@ if "__main__" == __name__:
         train_vae()
 
     if args.infer:
-        infer_vae()
+        infer_vae(args.infer)
