@@ -5,18 +5,104 @@ from torchinfo import summary
 import torchsummary
 
 from functools import reduce
+from typing import Union
 from filter_utils import make_oriented_map, make_oriented_map_stack_phases
 
+# TODO: insert [basic_block.py] here
 from basic_block import BasicBlock
 
 
+class Bottleneck(nn.Module):
+    expansion = 4
+
+    def __init__(
+        self,
+        in_planes,
+        planes,
+        stride=1,
+        use_oriented_maps_bottleneck: Union[str, None] = None,
+        oriented_maps_bottleneck_kernel_size: int = 7,
+        use_maxpool_shortcut: bool = False,
+    ):
+        super(Bottleneck, self).__init__()
+
+        self.conv1 = nn.Conv2d(
+            in_planes, planes, kernel_size=1, stride=stride, bias=False
+        )
+
+        self.bn1 = nn.BatchNorm2d(planes)
+
+        # allow for either phase map or power map
+        if "power" in use_oriented_maps_bottleneck:
+            conv2_planes_out, self._conv2_real, self._conv2_imag = make_oriented_map(
+                in_channels=planes,
+                kernel_size=oriented_maps_bottleneck_kernel_size,
+                directions=9,
+                stride=1,
+                dstack_phases=False,
+            )
+
+            self.conv2 = lambda x: self._conv2_real(x) ** 2 + self._conv2_imag(x) ** 2
+
+        elif "phase" in use_oriented_maps_bottleneck:
+            conv2_planes_out, self.conv2 = make_oriented_map(
+                in_channels=planes,
+                kernel_size=oriented_maps_bottleneck_kernel_size,
+                directions=9,
+                stride=1,
+                dstack_phases=True,
+            )
+
+        else:
+            self.conv2 = nn.Conv2d(
+                planes, planes, kernel_size=3, stride=1, padding=1, bias=False
+            )
+            conv2_planes_out = planes
+
+        self.bn2 = nn.BatchNorm2d(conv2_planes_out)
+        self.conv3 = nn.Conv2d(
+            conv2_planes_out, self.expansion * planes, kernel_size=1, bias=False
+        )
+        self.bn3 = nn.BatchNorm2d(self.expansion * planes)
+
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_planes != self.expansion * planes:
+            assert stride <= 2
+            self.shortcut = nn.Sequential(
+                # use a MaxPool2d downsampler
+                nn.MaxPool2d(kernel_size=3, stride=stride, padding=1)
+                if use_maxpool_shortcut
+                else nn.Identity(),
+                nn.Conv2d(
+                    in_planes,
+                    self.expansion * planes,
+                    kernel_size=1,
+                    stride=1 if use_maxpool_shortcut else stride,
+                    bias=False,
+                ),
+                nn.BatchNorm2d(self.expansion * planes),
+            )
+
+    def train_oriented_maps(self, train):
+        self.conv2.weight.requires_grad = train
+        if hasattr(self, "_conv2_real"):
+            self._conv2_real.weight.requires_grad = train
+        if hasattr(self, "_conv2_imag"):
+            self._conv2_imag.weight.requires_grad = train
+
+    def forward(self, x):
+        out = self.maxpool1(x) if hasattr(self, "maxpool1") else self.conv1(x)
+        out = F.relu(self.bn1(out))
+        out = F.relu(self.bn2(self.conv2(out)))
+        out = self.bn3(self.conv3(out))
+        shortcut_x = self.shortcut(x)
+        # print(f"{shortcut_x.shape} vs. {out.shape}")
+        out += shortcut_x
+        out = F.relu(out)
+        return out
+
+
 class Encoder(nn.Module):
-    """_summary_
-
-    Args:
-        nn (_type_): _description_
-    """
-
     def __init__(
         self,
         input_size,
@@ -26,7 +112,25 @@ class Encoder(nn.Module):
         use_ori_map="phased",
         use_abs=False,
     ):
+        """Resnet-34 based encoder
+
+        Args:
+            input_size (torch.Size): _description_
+            init_kernel_size (int, optional): _description_. Defaults to 9.
+            directions (int, optional): number of equal directions for Gabor filter. Defaults to 7.
+            latent_dim (int, optional): number of latent dimensions to convert input to. Defaults to 32.
+            use_ori_map (str, optional): these are to be moved to the VAE. Defaults to "phased".
+            use_abs (bool, optional): these are to be moved to theVAE. Defaults to False.
+        """
         super(Encoder, self).__init__()
+
+        #######################################################################################
+        #######################################################################################
+        #     ###     ###     ###     ###     ###     ###     ###     ###
+        #       ###     ###     ###     ###     ###     ###     ###     ###
+        #     ###     ###     ###     ###     ###     ###     ###     ###
+        #######################################################################################
+        #######################################################################################
 
         # TODO: move V1 to VAE and reuse V1VxLayer
         self.use_abs = use_abs
@@ -130,6 +234,14 @@ class Encoder(nn.Module):
 
             case _:
                 raise ("unknown")
+
+        #######################################################################################
+        #######################################################################################
+        #     ###     ###     ###     ###     ###     ###     ###     ###
+        #   ###     ###     ###     ###     ###     ###     ###     ###
+        #     ###     ###     ###     ###     ###     ###     ###     ###
+        #######################################################################################
+        #######################################################################################
 
         self.residual_blocks = nn.Sequential(
             BasicBlock(self.in_planes, 64),
