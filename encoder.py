@@ -297,15 +297,6 @@ class Encoder(nn.Module):
                 x_after_v1 = x.clone()
 
             case "phased" | "conv_7x7":
-            #     # TODO: calculate freq_per_kernel given current self.conv_2
-            #     current_channels = torch.Tensor(self.freq_per_kernel)
-            #     current_channels = torch.unsqueeze(current_channels, -1)
-            #     current_channels = torch.unsqueeze(current_channels, -1)
-            #     current_channels = torch.log(current_channels)
-            #     current_channels = current_channels.to(x.device)
-            #     self.freq_per_conv_2_out = self.conv_2(current_channels)
-            #     self.freq_per_conv_2_out  = torch.exp(self.freq_per_conv_2_out)
-
                 x = self.conv(x)
                 x_after_v1 = x.clone()
 

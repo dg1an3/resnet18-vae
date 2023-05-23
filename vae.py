@@ -76,7 +76,7 @@ def vae_loss(
         recon_loss += loss_func(x, x_recon, reduction="mean")
         if perc_loss is not None:
             use_weight = (
-                v1_weight is not None # and loss_func is not F.binary_cross_entropy
+                v1_weight is not None  # and loss_func is not F.binary_cross_entropy
             )
             v1_loss = loss_func(
                 perc_loss,
@@ -110,7 +110,9 @@ def reparameterize(mu, log_var):
 
 
 class VAE(nn.Module):
-    def __init__(self, input_size, init_kernel_size=13, latent_dim=32, use_stn=True):
+    def __init__(
+        self, input_size, init_kernel_size=13, latent_dim=32, use_v1_weights=True
+    ):
         """construct a resnet 34 VAE module
 
         Args:
@@ -120,11 +122,9 @@ class VAE(nn.Module):
         """
         super(VAE, self).__init__()
 
-        # construct a dummy input tensor
-        # input = torch.randn(input_size)
-
         self.input_size = input_size
         self.latent_dim = latent_dim
+        self.use_v1_weights = use_v1_weights
 
         self.encoder = Encoder(
             input_size,
@@ -155,18 +155,6 @@ class VAE(nn.Module):
         Returns:
             dictionary: dictionary of result tensors
         """
-        # set up the v1 weight for weighted loss function
-        if self.encoder.freq_per_conv_2_out is not None:
-            v1_weight = torch.Tensor(self.encoder.freq_per_conv_2_out)
-        else:
-            # TODO: get this from self.encoder(x)
-            phi = (5**0.5 + 1) / 2  # golden ratio
-            v1_weight = [
-                weight for n in range(1, -4, -1) for weight in [phi ** (n * 1)] * 8
-            ]
-            v1_weight = torch.Tensor(list(v1_weight))
-        v1_weight = None  # need to determine how to calculate weight, given the conv1x1
-
         # encode the input, returning the gaussian parameters
         mu, log_var, perc_loss = self.encoder(x)
 
@@ -175,6 +163,21 @@ class VAE(nn.Module):
 
         # and decode back to the original
         x_recon, perc_loss_recon = self.decoder(z)
+
+        v1_weight = None  # need to determine how to calculate weight, given the conv1x1
+
+        # set up the v1 weight for weighted loss function
+        v1_weight = None  # need to determine how to calculate weight, given the conv1x1
+        if self.use_v1_weights and self.encoder.freq_per_kernel is not None:
+            # calculate freq_per_kernel given current self.conv_2
+            current_channels = torch.Tensor(self.encoder.freq_per_kernel)
+            current_channels = torch.unsqueeze(current_channels, -1)
+            current_channels = torch.unsqueeze(current_channels, -1)
+            current_channels = torch.log(current_channels)
+            current_channels = current_channels.to(x.device)
+            freq_per_conv_2_out = self.encoder.conv_2(current_channels)
+            freq_per_conv_2_out = torch.exp(freq_per_conv_2_out)
+            v1_weight = torch.Tensor(freq_per_conv_2_out)
 
         return {
             "x_recon": x_recon,
@@ -215,7 +218,7 @@ def load_model(input_size, device, kernel_size=13, directions=5, latent_dim=96):
         input_size,
         init_kernel_size=kernel_size,
         latent_dim=latent_dim,
-        use_stn=True,
+        use_v1_weights=True,
     )
     model = model.to(device)
 

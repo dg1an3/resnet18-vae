@@ -181,7 +181,7 @@ def make_oriented_map(
     if frequencies is None:
         # populate with standard golden ratio frequencies
         phi = (5**0.5 + 1) / 2  # golden ratio
-        frequencies = [phi**n for n in range(1, -4, -1)]
+        frequencies = [phi**n for n in range(2, -3, -1)]
 
     # construct the gabor bank (which is a complex-valued tensor)
     freq_per_kernel, kernels_complex = make_gabor_bank(
@@ -202,10 +202,6 @@ def make_oriented_map(
 
 
 def make_oriented_map_stack_phases(
-    # in_channels: int = 3,
-    # kernel_size: int = 7,
-    # directions: int = 5,
-    # frequencies: Union[None, List[float]] = None,
     **kwargs,
 ) -> Tuple[List[float], torch.Tensor]:
     """stacks together the real and imaginary phases of the oriented map
@@ -220,7 +216,6 @@ def make_oriented_map_stack_phases(
         Tuple[int, torch.Tensor]: _description_
     """
     freq_per_kernel, weights_real, weights_imag = make_oriented_map(
-        # in_channels=in_channels, kernel_size=kernel_size, directions=directions, frequencies=frequencies,
         **kwargs
     )
 
