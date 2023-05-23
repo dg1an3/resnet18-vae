@@ -1,12 +1,14 @@
+import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchinfo import summary
-import torchsummary
 
 from functools import reduce
 from typing import Union
 from filter_utils import make_oriented_map, make_oriented_map_stack_phases
+
+from oriented_powermap import OrientedPowerMap
 
 # TODO: insert [basic_block.py] here
 from basic_block import BasicBlock
@@ -133,6 +135,7 @@ class Encoder(nn.Module):
         #######################################################################################
 
         # TODO: move V1 to VAE and reuse V1VxLayer
+        logging.warn("constructing oriented_powermap in encoder")
         self.use_abs = use_abs
         self.use_ori_map = use_ori_map
         match self.use_ori_map:
@@ -152,16 +155,19 @@ class Encoder(nn.Module):
                 )
                 self.in_planes = 64
             case "phased":
-                freq_per_kernel, kernels = make_oriented_map_stack_phases(
+                self.freq_per_kernel, kernels = make_oriented_map_stack_phases(
                     in_channels=input_size[0],
                     kernel_size=init_kernel_size,
                     directions=directions,
                 )
-                print(f"len(freq_per_kernel) = {len(freq_per_kernel)}")
+                kernel_count = len(self.freq_per_kernel)
+                print(f"len(freq_per_kernel) = {kernel_count}")
+
+                self.freq_per_conv_2_out = None
 
                 conv_1 = nn.Conv2d(
                     input_size[0],
-                    len(freq_per_kernel),
+                    kernel_count,
                     kernel_size=init_kernel_size,
                     stride=2,
                     padding=init_kernel_size // 2,
@@ -169,20 +175,22 @@ class Encoder(nn.Module):
                 )
                 conv_1.weight = torch.nn.Parameter(kernels, requires_grad=False)
 
+                self.conv_2 = nn.Conv2d(
+                    in_channels=kernel_count,
+                    out_channels=kernel_count // 2,
+                    kernel_size=1,
+                )
+
                 self.conv = nn.Sequential(
                     conv_1,
-                    nn.BatchNorm2d(len(freq_per_kernel)),
+                    nn.BatchNorm2d(kernel_count),
                     nn.ReLU(),
                     nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-                    nn.Conv2d(
-                        in_channels=len(freq_per_kernel),
-                        out_channels=len(freq_per_kernel) // 2,
-                        kernel_size=1,
-                    ),
+                    self.conv_2,
                     nn.ReLU(),
                 )
 
-                self.in_planes = len(freq_per_kernel) // 2
+                self.in_planes = kernel_count // 2
 
             case "unphased":
                 freq_per_kernel, weights_real_1, weights_imag_1 = make_oriented_map(
@@ -254,32 +262,18 @@ class Encoder(nn.Module):
             BasicBlock(512, 512),
         )
 
-        fixed_size = False
-        if fixed_size:
-            self.input_size_to_fc = [512, 16, 16]
+        # determine output size from v1 + residual blocks
+        test_input = torch.randn((1,) + input_size)
+        if self.use_ori_map == "unphased":
+            v1_output = self.conv_real_1(test_input)
         else:
-            # TODO perform sizing by calling residual block
-            self.input_size_to_fc = (
-                torchsummary.summary(
-                    nn.Sequential(
-                        self.conv_real_1
-                        if self.use_ori_map == "unphased"
-                        else self.conv,
-                        # self.post_1,
-                        self.residual_blocks,
-                    ),
-                    input_size,
-                    verbose=0,
-                )
-                .summary_list[-1]
-                .output_size[1:]
-            )
-            print(f"self.input_size_to_fc = {self.input_size_to_fc}")
+            v1_output = self.conv(test_input)
+        output = self.residual_blocks(v1_output)
+        self.input_size_to_fc = output.size()
+        print(f"self.input_size_to_fc = {self.input_size_to_fc}")
 
-        self.inputs_to_fc = reduce(lambda x, y: x * y, self.input_size_to_fc)
-
-        self.fc_mu = nn.Linear(self.inputs_to_fc, latent_dim)
-        self.fc_log_var = nn.Linear(self.inputs_to_fc, latent_dim)
+        self.fc_mu = nn.Linear(self.input_size_to_fc.numel(), latent_dim)
+        self.fc_log_var = nn.Linear(self.input_size_to_fc.numel(), latent_dim)
 
     def forward(self, x):
         """_summary_
@@ -303,6 +297,15 @@ class Encoder(nn.Module):
                 x_after_v1 = x.clone()
 
             case "phased" | "conv_7x7":
+            #     # TODO: calculate freq_per_kernel given current self.conv_2
+            #     current_channels = torch.Tensor(self.freq_per_kernel)
+            #     current_channels = torch.unsqueeze(current_channels, -1)
+            #     current_channels = torch.unsqueeze(current_channels, -1)
+            #     current_channels = torch.log(current_channels)
+            #     current_channels = current_channels.to(x.device)
+            #     self.freq_per_conv_2_out = self.conv_2(current_channels)
+            #     self.freq_per_conv_2_out  = torch.exp(self.freq_per_conv_2_out)
+
                 x = self.conv(x)
                 x_after_v1 = x.clone()
 

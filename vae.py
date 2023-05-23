@@ -14,12 +14,11 @@ import torch.nn.functional as F
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from torchvision.transforms import transforms
 from torchinfo import summary
 
 
-# from filter_utils import make_oriented_map
-
-from cxr8_dataset import Cxr8Dataset, get_clahe_transforms
+from cxr8_dataset import Cxr8Dataset
 
 from encoder import Encoder
 from decoder import Decoder
@@ -69,7 +68,7 @@ def vae_loss(
 
     if isinstance(v1_weight, torch.Tensor):
         v1_weight = v1_weight.to(perc_loss.device)
-    else:
+    elif v1_weight is not None:
         raise ("unknown weight type")
 
     recon_loss = 0.0
@@ -77,7 +76,7 @@ def vae_loss(
         recon_loss += loss_func(x, x_recon, reduction="mean")
         if perc_loss is not None:
             use_weight = (
-                v1_weight is not None and loss_func is not F.binary_cross_entropy
+                v1_weight is not None # and loss_func is not F.binary_cross_entropy
             )
             v1_loss = loss_func(
                 perc_loss,
@@ -95,6 +94,21 @@ def vae_loss(
     return recon_loss, kld_loss, recon_loss + beta * kld_loss
 
 
+def reparameterize(mu, log_var):
+    """perform reparameterization trick given mean and log variance
+
+    Args:
+        mu (torch.Tensor): mean tensor for gaussian
+        log_var (torch.Tensor): log variances for gaussian
+
+    Returns:
+        torch.Tensor: sampled value
+    """
+    std = torch.exp(0.5 * log_var)
+    eps = torch.randn_like(std)
+    return mu + eps * std
+
+
 class VAE(nn.Module):
     def __init__(self, input_size, init_kernel_size=13, latent_dim=32, use_stn=True):
         """construct a resnet 34 VAE module
@@ -107,7 +121,7 @@ class VAE(nn.Module):
         super(VAE, self).__init__()
 
         # construct a dummy input tensor
-        input = torch.randn(input_size)
+        # input = torch.randn(input_size)
 
         self.input_size = input_size
         self.latent_dim = latent_dim
@@ -117,143 +131,20 @@ class VAE(nn.Module):
             init_kernel_size=init_kernel_size,
             directions=7,
             latent_dim=latent_dim,
-            use_ori_map="phased",
+            use_ori_map="phased",  # means that there are 80 dimensions
             use_abs=True,
         )
+
+        # determine how many input dimensions to inverse convolve
+        dim_to_conv_tranpose = self.encoder.in_planes
 
         self.decoder = Decoder(
             self.encoder.input_size_to_fc,
             latent_dim=latent_dim,
             out_channels=input_size[0],
             final_kernel_size=init_kernel_size,
+            dim_to_conv_tranpose=dim_to_conv_tranpose,
         )
-
-        #######################################################################################
-        #######################################################################################
-        #     ###     ###     ###     ###     ###     ###     ###     ###
-        #       ###     ###     ###     ###     ###     ###     ###     ###
-        #     ###     ###     ###     ###     ###     ###     ###     ###
-        #######################################################################################
-        #######################################################################################
-
-        self.use_stn = use_stn
-        if self.use_stn:
-            # prepare the STN preprocessor
-
-            # TODO: separate STN in to its own module, so it can be invoked on inputs to:
-            #           calculate xform and lut; and apply transform and lut to inputs
-
-            self.localization = nn.Sequential(
-                nn.Conv2d(1, 6, kernel_size=7),
-                nn.MaxPool2d(2, stride=2),
-                nn.ReLU(True),
-                nn.Conv2d(6, 12, kernel_size=5),
-                nn.MaxPool2d(2, stride=2),
-                nn.ReLU(True),
-                # nn.Conv2d(16, 32, kernel_size=5),
-                # nn.MaxPool2d(2, stride=2),
-                # nn.ReLU(True),
-            )
-
-            # determine size of localization_out
-            localization_out = self.localization(input)
-            self.localization_out_numel = localization_out.shape.numel()
-            # print(localization_out.shape, )
-
-            self.fc_loc = nn.Sequential(
-                nn.Linear(self.localization_out_numel, 32),
-                nn.ReLU(True),
-                nn.Linear(32, 2 * 3),
-            )
-            self.fc_loc[2].weight.data.zero_()
-            self.fc_loc[2].bias.data.copy_(
-                torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
-            )
-
-    def stn(self, x):
-        """Spatial transformer network forward function
-
-        Args:
-            x (_type_): _description_
-
-        Returns:
-            _type_: _description_
-        """
-        logging.debug(f"x.shape = {x.shape}")
-
-        xs = self.localization(x)
-        logging.debug(f"xs.shape = {xs.shape}; {'nan' if xs.isnan().any() else ''}")
-
-        xs = xs.view(-1, self.localization_out_numel)
-        logging.debug(f"xs.shape = {xs.shape}")
-
-        theta = self.fc_loc(xs)
-        theta = theta.view(-1, 2, 3)
-        logging.debug(f"theta.shape = {theta.shape}")
-
-        use_clamp = True
-        if use_clamp:
-            theta[:, 0, 0] = torch.clamp(theta[:, 0, 0].clone(), 0.999, 1.001)
-            theta[:, 1, 1] = torch.clamp(theta[:, 1, 1].clone(), 0.999, 1.001)
-
-            theta[:, 0, 1] = torch.clamp(theta[:, 0, 1].clone(), -0.001, 0.001)
-            theta[:, 1, 0] = torch.clamp(theta[:, 1, 0].clone(), -0.001, 0.001)
-
-            theta[:, :, 2] = torch.clamp(theta[:, :, 2].clone(), -0.001, 0.001)
-
-        use_shift_center = False
-        if use_shift_center:
-            # convert theta to be centered on normalized image coordinates
-            shift_center = torch.tensor(
-                [[[1, 0, -0.5], [0, 1, -0.5]]], dtype=torch.float
-            )
-            logging.debug(f"shift_center.shape = {shift_center.shape}")
-
-            shift_center = shift_center.to(theta.device)
-            theta = torch.matmul(
-                theta,
-                shift_center,
-            )
-            theta = torch.matmul(
-                torch.tensor([[1, 0, 0.5], [0, 1, 0.5]], dtype=torch.float).to(
-                    theta.device
-                ),
-                theta,
-            )
-
-        # print(f"theta.shape = {theta.shape}; {'nan' if theta.isnan().any() else ''}")
-        theta_0 = theta[0].detach().cpu().numpy()
-        logging.debug(f"theta[0] = {theta_0[0]} {theta_0[1]}")
-
-        # and apply
-        grid = F.affine_grid(theta, x.size())
-        x = F.grid_sample(x, grid, padding_mode="reflection")
-
-        # TODO: move STN resampling to dataset (with metadata csv)
-
-        return x
-
-        #######################################################################################
-        #######################################################################################
-        #     ###     ###     ###     ###     ###     ###     ###     ###
-        #   ###     ###     ###     ###     ###     ###     ###     ###
-        #     ###     ###     ###     ###     ###     ###     ###     ###
-        #######################################################################################
-        #######################################################################################
-
-    def reparameterize(self, mu, log_var):
-        """perform reparameterization trick given mean and log variance
-
-        Args:
-            mu (torch.Tensor): mean tensor for gaussian
-            log_var (torch.Tensor): log variances for gaussian
-
-        Returns:
-            torch.Tensor: sampled value
-        """
-        std = torch.exp(0.5 * log_var)
-        eps = torch.randn_like(std)
-        return mu + eps * std
 
     def forward_dict(self, x):
         """perform forward pass, returning a dictionary of useful results for loss functions
@@ -264,35 +155,25 @@ class VAE(nn.Module):
         Returns:
             dictionary: dictionary of result tensors
         """
+        # set up the v1 weight for weighted loss function
+        if self.encoder.freq_per_conv_2_out is not None:
+            v1_weight = torch.Tensor(self.encoder.freq_per_conv_2_out)
+        else:
+            # TODO: get this from self.encoder(x)
+            phi = (5**0.5 + 1) / 2  # golden ratio
+            v1_weight = [
+                weight for n in range(1, -4, -1) for weight in [phi ** (n * 1)] * 8
+            ]
+            v1_weight = torch.Tensor(list(v1_weight))
+        v1_weight = None  # need to determine how to calculate weight, given the conv1x1
 
-        #######################################################################################
-        #######################################################################################
-        #     ###     ###     ###     ###     ###     ###     ###     ###
-        #       ###     ###     ###     ###     ###     ###     ###     ###
-        #     ###     ###     ###     ###     ###     ###     ###     ###
-        #######################################################################################
-        #######################################################################################
-        # first apply the transform
-        if self.use_stn:
-            x = self.stn(x)
-        #######################################################################################
-        #######################################################################################
-        #     ###     ###     ###     ###     ###     ###     ###     ###
-        #   ###     ###     ###     ###     ###     ###     ###     ###
-        #     ###     ###     ###     ###     ###     ###     ###     ###
-        #######################################################################################
-        #######################################################################################
-
+        # encode the input, returning the gaussian parameters
         mu, log_var, perc_loss = self.encoder(x)
 
-        # TODO: get this from self.encoder(x)
-        phi = (5**0.5 + 1) / 2  # golden ratio
-        v1_weight = torch.Tensor(
-            list([weight for n in range(2, -3, -1) for weight in [phi ** (n * 1)] * 8])
-        )
+        # reparameterization trick!
+        z = reparameterize(mu, log_var)
 
-        z = self.reparameterize(mu, log_var)
-
+        # and decode back to the original
         x_recon, perc_loss_recon = self.decoder(z)
 
         return {
@@ -317,7 +198,7 @@ class VAE(nn.Module):
         return result_dict["x_recon"]
 
 
-def load_model(input_size, device, kernel_size=11, directions=5, latent_dim=96):
+def load_model(input_size, device, kernel_size=13, directions=5, latent_dim=96):
     """_summary_
 
     Args:
@@ -401,7 +282,7 @@ def plot_samples(
     # TODO: move this to output to tensorboard
     x = x[0:5].clone()
 
-    x_xformed = model.stn(x) if model.use_stn else x
+    x_xformed = x  # model.stn(x) if model.use_stn else x
     x_xformed = x_xformed.detach().cpu().numpy()
 
     x = x.detach().cpu().numpy()
@@ -411,6 +292,7 @@ def plot_samples(
 
     # additive blending
     blend_data = np.stack([x_recon, x_xformed, x_recon], axis=-1)
+    blend_data = np.clip(blend_data, a_min=0.0, a_max=1.0)
 
     # print(v.shape)
     for n in range(5):
@@ -434,8 +316,14 @@ def train_vae(device):
     root_path = Path(data_temp_path) / "cxr8"
 
     # TODO: do we still need transforms
-    transforms = get_clahe_transforms(clahe_tile_size=8, input_size=448)
-    train_dataset = Cxr8Dataset(root_path, transform=transforms)
+    train_dataset = Cxr8Dataset(
+        root_path,
+        transform=transforms.Compose(
+            [
+                transforms.ToTensor(),
+            ]
+        ),
+    )
 
     input_size = train_dataset[0]["image"].shape
     logging.info(f"input_size = {input_size}")
@@ -458,8 +346,9 @@ def train_vae(device):
         optimizer.zero_grad()
 
         result_dict = model.forward_dict(x)
-        result_dict["v1_weight"] = result_dict["v1_weight"].to(device)
-        logging.info(f"v1_weight = {result_dict['v1_weight']}")
+        if result_dict["v1_weight"] is not None:
+            result_dict["v1_weight"] = result_dict["v1_weight"].to(device)
+            logging.info(f"v1_weight = {result_dict['v1_weight']}")
 
         recon_loss, kldiv_loss, loss = vae_loss(
             recon_loss_metrics=(F.binary_cross_entropy, F.l1_loss),
@@ -494,6 +383,9 @@ def train_vae(device):
         logging.info(
             f"Loss: {train_loss / train_count:.6f} ({recon_loss:.6f}/{kldiv_loss:.6f})"
         )
+
+        # release from this batch
+        # torch.cuda.empty_cache()
 
     logging.info(f"saving model for epoch {start_epoch+1}")
     torch.save(

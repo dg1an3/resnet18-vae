@@ -1,30 +1,39 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchinfo import summary
 
 from functools import reduce
 
+# TODO: insert this directly
 from reverse_basic_block import ReverseBasicBlock
 from encoder import Encoder
 
 
 class Decoder(nn.Module):
-    """_summary_
-
-    Args:
-        nn (_type_): _description_
-    """
+    """_summary_"""
 
     def __init__(
-        self, size_from_fc, latent_dim=32, out_channels=3, final_kernel_size=7
+        self,
+        size_from_fc: torch.Size,
+        latent_dim=32,
+        out_channels=3,
+        final_kernel_size=7,
+        dim_to_conv_tranpose=40,
     ):
+        """_summary_
+
+        Args:
+            size_from_fc (torch.Size): _description_
+            latent_dim (int, optional): _description_. Defaults to 32.
+            out_channels (int, optional): _description_. Defaults to 3.
+            final_kernel_size (int, optional): _description_. Defaults to 7.
+            dim_to_conv_tranpose (int, optional): _description_. Defaults to 40.
+        """
         super(Decoder, self).__init__()
 
         self.size_from_fc = size_from_fc
-
-        self.fc = nn.Linear(latent_dim, reduce(lambda x, y: x * y, size_from_fc))
-
-        dim_to_conv_tranpose = 40
+        self.fc = nn.Linear(latent_dim, size_from_fc.numel())
 
         self.residual_blocks = nn.Sequential(
             ReverseBasicBlock(512, 256, stride=2),
@@ -44,11 +53,11 @@ class Decoder(nn.Module):
                 kernel_size=final_kernel_size,
                 stride=1,
                 padding=final_kernel_size // 2,
-                #output_padding=0,
+                # output_padding=0,
                 bias=True,
             ),
             nn.BatchNorm2d(out_channels),
-            nn.Upsample(scale_factor=2, mode='bilinear'),
+            nn.Upsample(scale_factor=2, mode="bilinear"),
             nn.Sigmoid(),
         )
 
@@ -63,7 +72,10 @@ class Decoder(nn.Module):
         """
         x = self.fc(x)
         x = x.view(
-            x.size(0), self.size_from_fc[0], self.size_from_fc[1], self.size_from_fc[2]
+            x.size(0),
+            self.size_from_fc[-3],
+            self.size_from_fc[-2],
+            self.size_from_fc[-1],
         )
         x = self.residual_blocks(x)
 

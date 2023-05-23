@@ -1,25 +1,51 @@
+# -*- coding: utf-8 -*-
+"""copyright (c) dglane 2023
+
+Module oriented_powermap.py contains the OrientedPowerMap class, which implements a 
+gabor filter bank pytorch module.
+
+It also has a set of unit tests for both OrientedPowerMap and helper functions
+"""
+
 import torch
 import torch.nn as nn
 
+# TODO: insert filter_utils here, and include unit tests
 from filter_utils import make_oriented_map
 
 
 class OrientedPowerMap(nn.Module):
-    """_summary_
+    """This is an implementation of an oriented (gabor) powermap convolutional layer in pytorch.
 
-    Args:
-        nn (_type_): _description_
+    The oriented powermap can be used either
+     * preserving phase: (directions+1) x frequencies x 2 phases filters will be generated
+     * phaseless: in which case (directions+1) x frequencies x 1 response magnitude filters
+        will be generated
+
+    It is a reasonable approximation to V1-like receptive fields.
     """
 
     def __init__(
         self,
-        in_channels,
+        in_channels: int,
         use_abs=False,
         use_batch_norm=False,
         kernel_size=11,
         golden_mean_octaves=[3, 2, 1, 0, -1, -2],
         directions=7,
     ):
+        """construct an OrientedPowerMap
+
+        Args:
+            in_channels (int): number of input channels
+            use_abs (bool, optional): indicates that we will use absolute value instead of
+                squared intensities. Defaults to False.
+            use_batch_norm (bool, optional): _description_. Defaults to False.
+            kernel_size (int, optional): _description_. Defaults to 11.
+            golden_mean_octaves (list, optional): list of octaves of the golden mean to be
+                represented. Defaults to [3, 2, 1, 0, -1, -2].
+            directions (int, optional): number of dimensions. Defaults to 7.
+        """
         super(OrientedPowerMap, self).__init__()
 
         self.in_channels = in_channels
@@ -78,7 +104,7 @@ class OrientedPowerMap(nn.Module):
                 output_padding=0,
                 bias=False,
             ),
-            nn.Upsample(scale_factor=2, mode='bilinear'),
+            nn.Upsample(scale_factor=2, mode="bilinear"),
             nn.BatchNorm2d(self.in_channels),
             nn.Sigmoid(),
         )
@@ -114,29 +140,49 @@ class OrientedPowerMap(nn.Module):
         return x
 
 
-if __name__ == "__main__":
-    # construct the model
-    model = OrientedPowerMap(in_channels=1)
-    model = model.to("cpu")
+#######################################################################################
+#######################################################################################
+#     ###     ###     ###     ###     ###     ###     ###     ###
+#     ###     ###     ###     ###     ###     ###     ###     ###
+#     ###     ###     ###     ###     ###     ###     ###     ###
+#######################################################################################
+#######################################################################################
 
-    from torchinfo import summary
+import unittest
+from torchinfo import summary
 
-    print(
-        summary(
-            model,
-            input_size=(37, 1, 448, 448),
-            col_names=[
-                "input_size",
-                "kernel_size",
-                "mult_adds",
-                "num_params",
-                "output_size",
-                "trainable",
-            ],
+
+class TestOrientedPowerMap(unittest.TestCase):
+    def test_torchinfo(self):
+        # construct the model
+        model = OrientedPowerMap(in_channels=1)
+        model = model.to("cpu")
+
+        print(
+            summary(
+                model,
+                input_size=(37, 1, 448, 448),
+                col_names=[
+                    "input_size",
+                    "kernel_size",
+                    "mult_adds",
+                    "num_params",
+                    "output_size",
+                    "trainable",
+                ],
+            )
         )
-    )
 
-    x = torch.randn((47,1,448,448)).to("cuda")
-    x_latent = model(x)
-    x_prime = model.decoder(x_latent)
-    print(x, x_latent, x_prime)
+    def test_encode_decode(self):
+        # construct the model
+        model = OrientedPowerMap(in_channels=1)
+        model = model.to("cpu")
+
+        x = torch.randn((47, 1, 448, 448)).to("cuda")
+        x_latent = model(x)
+        x_prime = model.decoder(x_latent)
+        print(x, x_latent, x_prime)
+
+
+if __name__ == "__main__":
+    unittest.main()
