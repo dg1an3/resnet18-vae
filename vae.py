@@ -175,7 +175,9 @@ class VAE(nn.Module):
             current_channels = torch.unsqueeze(current_channels, -1)
             current_channels = torch.log(current_channels)
             current_channels = current_channels.to(x.device)
-            freq_per_conv_2_out = self.encoder.conv_2(current_channels)
+            freq_per_conv_2_out = self.encoder.oriented_powermap.conv_2(
+                current_channels
+            )
             freq_per_conv_2_out = torch.exp(freq_per_conv_2_out)
             v1_weight = torch.Tensor(freq_per_conv_2_out)
 
@@ -201,7 +203,7 @@ class VAE(nn.Module):
         return result_dict["x_recon"]
 
 
-def load_model(input_size, device, kernel_size=13, directions=5, latent_dim=96):
+def load_model(input_size, device, kernel_size=11, directions=5, latent_dim=96):
     """_summary_
 
     Args:
@@ -218,7 +220,7 @@ def load_model(input_size, device, kernel_size=13, directions=5, latent_dim=96):
         input_size,
         init_kernel_size=kernel_size,
         latent_dim=latent_dim,
-        use_v1_weights=True,
+        use_v1_weights=False,
     )
     model = model.to(device)
 
@@ -248,9 +250,12 @@ def load_model(input_size, device, kernel_size=13, directions=5, latent_dim=96):
         )
     )
 
+    torch.cuda.empty_cache()
+
     return model, optimizer, start_epoch
 
 
+# TODO: move this to show_utils.py
 def plot_samples(
     model,
     start_epoch,
@@ -314,11 +319,10 @@ def train_vae(device):
     Args:
         device (torch.Device): device to host training
     """
-    # TODO: move dataset preparation to another function
+    # TODO: move dataset preparation to cxr8_dataset.py
     data_temp_path = os.environ["DATA_TEMP"]
     root_path = Path(data_temp_path) / "cxr8"
 
-    # TODO: do we still need transforms
     train_dataset = Cxr8Dataset(
         root_path,
         transform=transforms.Compose(
@@ -331,7 +335,7 @@ def train_vae(device):
     input_size = train_dataset[0]["image"].shape
     logging.info(f"input_size = {input_size}")
 
-    train_loader = DataLoader(train_dataset, batch_size=48, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     logging.info(f"train_dataset length = {len(train_dataset)}")
 
     model, optimizer, start_epoch = load_model(input_size, device)
