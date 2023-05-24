@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+"""copyright (c) dglane 2023
+
+module Decoder contains the Decoder class.
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

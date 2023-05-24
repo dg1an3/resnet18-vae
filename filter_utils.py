@@ -1,10 +1,7 @@
 # -*- coding: utf-8 -*-
-"""filter_utils.py implements a gabor pyramid for pytorch.
+"""copyright (c) dglane 2023
 
-Notice the comment above the docstring specifying the encoding.
-Docstrings do appear in the bytecode, so you can access this through
-the ``__doc__`` attribute. This is also what you'll see if you call
-help() on a module or any other Python object.
+filter_utils.py implements a gabor pyramid for pytorch.
 """
 
 from typing import Tuple, List, Union
@@ -100,7 +97,7 @@ def gabor(
     [[0.0]]
     """
     return complex_exp(xs, ys, freq, angle_rad) * gauss(
-        xs, ys, sigma if sigma else 2.0 / freq
+        xs, ys, sigma if sigma else 3.0 / freq
     )
 
 
