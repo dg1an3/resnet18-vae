@@ -26,34 +26,6 @@ def match_histograms(fixed, moving):
     return moving
 
 
-def get_clahe_transforms(clip_limit=4, clahe_tile_size=8, input_size=448):
-    """_summary_
-
-    Args:
-        clahe_tile_size (int, optional): _description_. Defaults to 8.
-        input_size (tuple, optional): _description_. Defaults to (448, 448).
-
-    Returns:
-        _type_: _description_
-    """
-    clahe = cv2.createCLAHE(
-        clipLimit=clip_limit, tileGridSize=(clahe_tile_size, clahe_tile_size)
-    )
-
-    return transforms.Compose(
-        [
-            # transforms.Grayscale(),
-            # transforms.ToTensor(),
-            # transforms.Normalize((0.5,),(10.0,)),
-            # transforms.Lambda(lambda x: x*255.0),
-            # transforms.ToPILImage(),
-            # transforms.Resize((input_size, input_size)),
-
-            # transforms.Lambda(np.array),
-            # transforms.Lambda(clahe.apply),
-            transforms.ToTensor(),
-        ]
-    )
 
 class Cxr8Dataset(Dataset):
     """_summary_
@@ -78,7 +50,7 @@ class Cxr8Dataset(Dataset):
 
         clip_limit=4
         clahe_tile_size=8
-        input_size=448
+        input_size=512
         self.clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(clahe_tile_size, clahe_tile_size)
     )
 
@@ -89,7 +61,7 @@ class Cxr8Dataset(Dataset):
         # print(f"img_name {img_name}")
 
         image = cv2.imread(img_name, cv2.IMREAD_GRAYSCALE)
-        image = cv2.resize(image, (448,448))
+        image = cv2.resize(image, (512,512))
         # image = cv2.normalize(image, None, 0.0, 1.0, cv2.NORM_MINMAX)
         image = self.clahe.apply(image)
         image_min, image_max, image_avg, image_std = np.min(image), np.max(image), np.average(image), np.std(image)
