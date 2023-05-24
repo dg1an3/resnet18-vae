@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 
 # TODO: insert filter_utils here, and include unit tests
-from filter_utils import make_oriented_map
+from filter_utils import make_oriented_map, make_oriented_map_stack_phases
 
 
 class OrientedPowerMap(nn.Module):
@@ -28,19 +28,14 @@ class OrientedPowerMap(nn.Module):
     def __init__(
         self,
         in_channels: int,
-        use_abs=False,
-        use_batch_norm=False,
         kernel_size=11,
-        golden_mean_octaves=[3, 2, 1, 0, -1, -2],
+        frequencies=None,
         directions=7,
     ):
         """construct an OrientedPowerMap
 
         Args:
             in_channels (int): number of input channels
-            use_abs (bool, optional): indicates that we will use absolute value instead of
-                squared intensities. Defaults to False.
-            use_batch_norm (bool, optional): _description_. Defaults to False.
             kernel_size (int, optional): _description_. Defaults to 11.
             golden_mean_octaves (list, optional): list of octaves of the golden mean to be
                 represented. Defaults to [3, 2, 1, 0, -1, -2].
@@ -50,64 +45,110 @@ class OrientedPowerMap(nn.Module):
 
         self.in_channels = in_channels
 
-        self.kernel_size = kernel_size
-        self.golden_mean_octaves = golden_mean_octaves
-        self.directions = directions
+        if True:  # new
+            self.kernel_size = kernel_size
+            if frequencies:
+                self.frequencies = frequencies
+            else:
+                self.frequencies = [2.0, 1.0, 0.5, 0.25, 0.125]
 
-        self.use_abs = use_abs
-        self.use_batch_norm = use_batch_norm
+            self.directions = directions
 
-        kernel_count, weights_real, weights_imag = make_oriented_map(
-            in_channels=in_channels,
-            kernel_size=self.kernel_size,
-            directions=self.directions,
-            # golden_mean_octaves=self.golden_mean_octaves,
-            stride=1,
-        )
+            self.freq_per_kernel, kernels = make_oriented_map_stack_phases(
+                in_channels=in_channels,
+                kernel_size=kernel_size,
+                directions=directions,
+            )
+            kernel_count = len(self.freq_per_kernel)
+            print(f"len(freq_per_kernel) = {kernel_count}")
 
-        self.conv_real = nn.Conv2d(
-            in_channels,
-            kernel_count,
-            kernel_size=self.kernel_size,
-            stride=1,
-            padding=self.kernel_size // 2,
-            bias=False,
-        )
-        self.conv_real.weight = torch.nn.Parameter(weights_real, requires_grad=False)
+            conv_1 = nn.Conv2d(
+                in_channels,
+                kernel_count,
+                kernel_size=kernel_size,
+                stride=2,
+                padding=kernel_size // 2,
+                bias=True,
+            )
+            conv_1.weight = torch.nn.Parameter(kernels, requires_grad=False)
 
-        self.conv_imag = nn.Conv2d(
-            in_channels,
-            kernel_count,
-            kernel_size=self.kernel_size,
-            stride=1,
-            padding=self.kernel_size // 2,
-            bias=False,
-        )
-        self.conv_imag.weight = torch.nn.Parameter(weights_imag, requires_grad=False)
+            self.conv_2 = nn.Conv2d(
+                in_channels=kernel_count,
+                out_channels=kernel_count // 2,
+                kernel_size=1,
+            )
 
-        self.out_channels = self.conv_real.weight.shape[0] // 10
+            self.conv = nn.Sequential(
+                conv_1,
+                nn.BatchNorm2d(kernel_count),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+                self.conv_2,
+                nn.ReLU(),
+            )
 
-        self.batch_norm = nn.BatchNorm2d(self.conv_real.weight.shape[0])
-        self.activation = nn.ReLU()
-        self.max_pool_2 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.dim_reduce = nn.Conv2d(
-            self.conv_real.weight.shape[0], self.out_channels, kernel_size=1, bias=False
-        )
+            self.in_planes = kernel_count // 2
+            self.out_channels = self.conv_2.out_channels
 
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(
-                self.out_channels,
-                out_channels=self.in_channels,
+        else:  # old
+            kernel_count, weights_real, weights_imag = make_oriented_map(
+                in_channels=in_channels,
+                kernel_size=self.kernel_size,
+                directions=self.directions,
+                frequencies=self.frequencies,
+                stride=1,
+            )
+
+            self.conv_real = nn.Conv2d(
+                in_channels,
+                kernel_count,
                 kernel_size=self.kernel_size,
                 stride=1,
                 padding=self.kernel_size // 2,
-                output_padding=0,
                 bias=False,
-            ),
-            nn.Upsample(scale_factor=2, mode="bilinear"),
-            nn.BatchNorm2d(self.in_channels),
-            nn.Sigmoid(),
-        )
+            )
+            self.conv_real.weight = torch.nn.Parameter(
+                weights_real, requires_grad=False
+            )
+
+            self.conv_imag = nn.Conv2d(
+                in_channels,
+                kernel_count,
+                kernel_size=self.kernel_size,
+                stride=1,
+                padding=self.kernel_size // 2,
+                bias=False,
+            )
+            self.conv_imag.weight = torch.nn.Parameter(
+                weights_imag, requires_grad=False
+            )
+
+            self.out_channels = self.conv_real.weight.shape[0] // 10
+
+            self.batch_norm = nn.BatchNorm2d(self.conv_real.weight.shape[0])
+            self.activation = nn.ReLU()
+            self.max_pool_2 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+            self.dim_reduce = nn.Conv2d(
+                self.conv_real.weight.shape[0],
+                self.out_channels,
+                kernel_size=1,
+                bias=False,
+            )
+
+        # self.decoder = nn.Sequential(
+        #     nn.Conv2d(
+        #         self.out_channels,
+        #         out_channels=self.in_channels,
+        #         kernel_size=self.kernel_size,
+        #         stride=1,
+        #         padding=self.kernel_size // 2,
+        #         # output_padding=0,
+        #         bias=False,
+        #     ),
+        #     nn.Upsample(scale_factor=2, mode="bilinear"),
+        #     nn.BatchNorm2d(self.in_channels),
+        #     nn.Sigmoid(),
+        # )
 
     def forward(self, x):
         """_summary_
@@ -119,23 +160,13 @@ class OrientedPowerMap(nn.Module):
             _type_: _description_
         """
         # capture size for later comparison
-        pre_size = x.size()
+        #?pre_size = x.size()
 
-        x = self.conv_real(x) ** 2 + self.conv_imag(x) ** 2
-        if self.use_abs:
-            x = torch.sqrt(x)
-
-        if self.use_batch_norm:
-            x = self.batch_norm(x)
-
-        x = self.activation(x)
-        x = self.max_pool_2(x)
-
-        x = self.dim_reduce(x)
+        x = self.conv(x)
 
         # check that sizes are in half
-        print(f"pre_size = {pre_size}; post_size = {x.size()}")
-        assert x.size()[-1] == pre_size[-1] // 2
+        # print(f"pre_size = {pre_size}; post_size = {x.size()}")
+        # assert x.size()[-1] == pre_size[-1] // 2
 
         return x
 

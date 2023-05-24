@@ -154,43 +154,54 @@ class Encoder(nn.Module):
                     nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
                 )
                 self.in_planes = 64
+
             case "phased":
-                self.freq_per_kernel, kernels = make_oriented_map_stack_phases(
-                    in_channels=input_size[0],
-                    kernel_size=init_kernel_size,
-                    directions=directions,
-                )
-                kernel_count = len(self.freq_per_kernel)
-                print(f"len(freq_per_kernel) = {kernel_count}")
+                if True:  # was inline
+                    self.oriented_powermap = OrientedPowerMap(
+                        input_size[0],
+                        kernel_size=init_kernel_size,
+                        frequencies=None,
+                        directions=directions,
+                    )
 
-                self.freq_per_conv_2_out = None
+                    self.freq_per_kernel = self.oriented_powermap.freq_per_kernel
+                    self.in_planes = self.oriented_powermap.out_channels
 
-                conv_1 = nn.Conv2d(
-                    input_size[0],
-                    kernel_count,
-                    kernel_size=init_kernel_size,
-                    stride=2,
-                    padding=init_kernel_size // 2,
-                    bias=True,
-                )
-                conv_1.weight = torch.nn.Parameter(kernels, requires_grad=False)
+                else:
+                    self.freq_per_kernel, kernels = make_oriented_map_stack_phases(
+                        in_channels=input_size[0],
+                        kernel_size=init_kernel_size,
+                        directions=directions,
+                    )
+                    kernel_count = len(self.freq_per_kernel)
+                    print(f"len(freq_per_kernel) = {kernel_count}")
 
-                self.conv_2 = nn.Conv2d(
-                    in_channels=kernel_count,
-                    out_channels=kernel_count // 2,
-                    kernel_size=1,
-                )
+                    conv_1 = nn.Conv2d(
+                        input_size[0],
+                        kernel_count,
+                        kernel_size=init_kernel_size,
+                        stride=2,
+                        padding=init_kernel_size // 2,
+                        bias=True,
+                    )
+                    conv_1.weight = torch.nn.Parameter(kernels, requires_grad=False)
 
-                self.conv = nn.Sequential(
-                    conv_1,
-                    nn.BatchNorm2d(kernel_count),
-                    nn.ReLU(),
-                    nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-                    self.conv_2,
-                    nn.ReLU(),
-                )
+                    self.conv_2 = nn.Conv2d(
+                        in_channels=kernel_count,
+                        out_channels=kernel_count // 2,
+                        kernel_size=1,
+                    )
 
-                self.in_planes = kernel_count // 2
+                    self.conv = nn.Sequential(
+                        conv_1,
+                        nn.BatchNorm2d(kernel_count),
+                        nn.ReLU(),
+                        nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+                        self.conv_2,
+                        nn.ReLU(),
+                    )
+
+                    self.in_planes = kernel_count // 2
 
             case "unphased":
                 freq_per_kernel, weights_real_1, weights_imag_1 = make_oriented_map(
@@ -264,10 +275,14 @@ class Encoder(nn.Module):
 
         # determine output size from v1 + residual blocks
         test_input = torch.randn((1,) + input_size)
-        if self.use_ori_map == "unphased":
-            v1_output = self.conv_real_1(test_input)
-        else:
-            v1_output = self.conv(test_input)
+        match self.use_ori_map:
+            case "unphased":
+                v1_output = self.conv_real_1(test_input)
+            case "conv_7x7":
+                v1_output = self.conv(test_input)
+            case "phased":
+                v1_output = self.oriented_powermap(test_input)
+
         output = self.residual_blocks(v1_output)
         self.input_size_to_fc = output.size()
         print(f"self.input_size_to_fc = {self.input_size_to_fc}")
@@ -296,7 +311,11 @@ class Encoder(nn.Module):
 
                 x_after_v1 = x.clone()
 
-            case "phased" | "conv_7x7":
+            case "phased":
+                x = self.oriented_powermap(x)
+                x_after_v1 = x.clone()
+
+            case "conv_7x7":
                 x = self.conv(x)
                 x_after_v1 = x.clone()
 
