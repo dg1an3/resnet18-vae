@@ -1,12 +1,15 @@
+# -*- coding: utf-8 -*-
+"""copyright (c) dglane 2023
+
+vae.py contains the main VAE class, loss function, and training and inference logic
+"""
+
 import os, datetime, logging
 from pathlib import Path
 
 import numpy as np
 
-import matplotlib
-import matplotlib.pyplot as plt
-
-matplotlib.use("agg")
+from show_utils import plot_samples
 
 import torch
 import torch.nn as nn
@@ -29,6 +32,13 @@ def clamp_01(x, eps=1e-6):
         return None
 
     return torch.clamp(x, eps, 1.0 - eps)
+
+
+#############################################################################################################
+##########################################
+############################
+#########
+####
 
 
 def vae_loss(
@@ -109,9 +119,16 @@ def reparameterize(mu, log_var):
     return mu + eps * std
 
 
+##############################################################################################
+######################################
+###################
+#########
+####
+
+
 class VAE(nn.Module):
     def __init__(
-        self, input_size, init_kernel_size=13, latent_dim=32, use_v1_weights=True
+        self, input_size, init_kernel_size=13, latent_dim=32, use_v1_weights=False
     ):
         """construct a resnet 34 VAE module
 
@@ -203,6 +220,28 @@ class VAE(nn.Module):
         return result_dict["x_recon"]
 
 
+####
+#########
+############################
+#########
+####
+####
+#########
+############################
+#########
+####
+####
+#########
+############################
+#########
+####
+####
+#########
+############################
+#########
+####
+
+
 def load_model(input_size, device, kernel_size=11, directions=5, latent_dim=96):
     """_summary_
 
@@ -255,62 +294,11 @@ def load_model(input_size, device, kernel_size=11, directions=5, latent_dim=96):
     return model, optimizer, start_epoch
 
 
-# TODO: move this to show_utils.py
-def plot_samples(
-    model,
-    start_epoch,
-    train_loss,
-    train_count,
-    batch_idx,
-    x,
-    x_recon,
-    recon_loss,
-    kldiv_loss,
-):
-    """_summary_
-
-    Args:
-        model (_type_): _description_
-        start_epoch (_type_): _description_
-        train_loss (_type_): _description_
-        train_count (_type_): _description_
-        batch_idx (_type_): _description_
-        x (_type_): _description_
-        x_recon (_type_): _description_
-        recon_loss (_type_): _description_
-        kldiv_loss (_type_): _description_
-    """
-    fig, ax = plt.subplots(3, 5, figsize=(20, 12))
-    fig.suptitle(
-        f"Epoch {start_epoch+1} Batch {batch_idx} Loss: {train_loss / train_count:.6f} ({recon_loss:.6f}/{kldiv_loss:.6f})"
-    )
-    fig.patch.set_facecolor("xkcd:gray")
-
-    # fig.show()
-    # TODO: move this to output to tensorboard
-    x = x[0:5].clone()
-
-    x_xformed = x  # model.stn(x) if model.use_stn else x
-    x_xformed = x_xformed.detach().cpu().numpy()
-
-    x = x.detach().cpu().numpy()
-
-    x_recon = x_recon[0:5].clone()
-    x_recon = x_recon.detach().cpu().numpy()
-
-    # additive blending
-    blend_data = np.stack([x_recon, x_xformed, x_recon], axis=-1)
-    blend_data = np.clip(blend_data, a_min=0.0, a_max=1.0)
-
-    # print(v.shape)
-    for n in range(5):
-        ax[0][n].imshow(np.squeeze(x[n]), cmap="bone")
-        ax[1][n].imshow(np.squeeze(blend_data[n]))  # cmap='bone')
-        ax[2][n].imshow(np.squeeze(x_recon[n]), cmap="bone")
-
-    fig.tight_layout()
-    fig.savefig(f"runs/{log_base}_current.png")
-    plt.close(fig)
+####
+#########
+#################
+#########################
+###########################################
 
 
 def train_vae(device):
@@ -406,6 +394,13 @@ def train_vae(device):
     )
 
     logging.info("completed training")
+
+
+####
+#########
+############################
+##########################################
+#############################################################################################################
 
 
 def infer_vae(device, input_size, source_dir):
