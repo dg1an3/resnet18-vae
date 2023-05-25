@@ -59,6 +59,39 @@ class Decoder(nn.Module):
                 kernel_size=final_kernel_size,
                 stride=1,
                 padding=final_kernel_size // 2,
+                padding_mode="replicate",
+                # output_padding=0,
+                bias=True,
+            ),
+            nn.BatchNorm2d(out_channels),
+            nn.Upsample(scale_factor=2, mode="bilinear"),
+            # nn.Sigmoid(),
+        )
+
+        self.conv_transpose_2 = nn.Sequential(
+            nn.Conv2d(
+                out_channels,
+                out_channels,
+                kernel_size=final_kernel_size,
+                stride=1,
+                padding=final_kernel_size // 2,
+                padding_mode="replicate",
+                # output_padding=0,
+                bias=True,
+            ),
+            nn.BatchNorm2d(out_channels),
+            nn.Upsample(scale_factor=2, mode="bilinear"),
+            # nn.Sigmoid(),
+        )
+
+        self.conv_transpose_3 = nn.Sequential(
+            nn.Conv2d(
+                out_channels,
+                out_channels,
+                kernel_size=final_kernel_size,
+                stride=1,
+                padding=final_kernel_size // 2,
+                padding_mode="replicate",
                 # output_padding=0,
                 bias=True,
             ),
@@ -86,9 +119,12 @@ class Decoder(nn.Module):
         x = self.residual_blocks(x)
 
         x_before_v1 = x.clone()
-        x_before_v1 = F.max_pool2d(x_before_v1, kernel_size=3, stride=2, padding=1)
+        # TODO: why is this happening
+        # x_before_v1 = F.max_pool2d(x_before_v1, kernel_size=3, stride=2, padding=1)
 
         x = self.conv_transpose_1(x)
+        x = self.conv_transpose_2(x)
+        x = self.conv_transpose_3(x)
 
         return x, x_before_v1
 

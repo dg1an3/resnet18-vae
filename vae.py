@@ -282,7 +282,7 @@ def load_model(input_size, device, kernel_size=11, directions=5, latent_dim=96):
                 "input_size",
                 "kernel_size",
                 "mult_adds",
-                "num_params",
+                # "num_params",
                 "output_size",
                 "trainable",
             ],
@@ -323,10 +323,10 @@ def train_vae(device):
     input_size = train_dataset[0]["image"].shape
     logging.info(f"input_size = {input_size}")
 
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=40, shuffle=True)
     logging.info(f"train_dataset length = {len(train_dataset)}")
 
-    model, optimizer, start_epoch = load_model(input_size, device)
+    model, optimizer, start_epoch = load_model(input_size, device, latent_dim=48)
     logging.info(set([p.device for p in model.parameters()]))
 
     # torch.autograd.set_detect_anomaly(True)
@@ -413,7 +413,7 @@ def infer_vae(device, input_size, source_dir):
     """
     print(f"inferring images in {source_dir}")
 
-    model, _, start_epoch = load_model(input_size, device)
+    model, _, start_epoch = load_model(input_size, device, latent_dim=48)
 
     print(
         summary(
@@ -424,7 +424,7 @@ def infer_vae(device, input_size, source_dir):
                 "input_size",
                 "kernel_size",
                 "mult_adds",
-                "num_params",
+                # "num_params",
                 "output_size",
                 "trainable",
             ],
@@ -465,4 +465,4 @@ if "__main__" == __name__:
         train_vae(device)
 
     if args.infer:
-        infer_vae(device, (1, 448, 448), args.infer)
+        infer_vae(device, (1, 512, 512), args.infer)

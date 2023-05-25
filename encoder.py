@@ -1,12 +1,17 @@
+# -*- coding: utf-8 -*-
+"""copyright (c) dglane 2023
+
+encoder.py contains the Encoder class
+"""
+
 import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchinfo import summary
 
-from functools import reduce
 from typing import Union
-from filter_utils import make_oriented_map, make_oriented_map_stack_phases
+from filter_utils import make_oriented_map
 
 from oriented_powermap import OrientedPowerMap
 
@@ -103,6 +108,13 @@ class Bottleneck(nn.Module):
         out = F.relu(out)
         return out
 
+#######################################################################################
+#######################################################################################
+#     ###     ###     ###     ###     ###     ###     ###     ###
+#       ###     ###     ###     ###     ###     ###     ###     ###
+#     ###     ###     ###     ###     ###     ###     ###     ###
+#######################################################################################
+#######################################################################################
 
 class Encoder(nn.Module):
     def __init__(
@@ -126,144 +138,35 @@ class Encoder(nn.Module):
         """
         super(Encoder, self).__init__()
 
-        #######################################################################################
-        #######################################################################################
-        #     ###     ###     ###     ###     ###     ###     ###     ###
-        #       ###     ###     ###     ###     ###     ###     ###     ###
-        #     ###     ###     ###     ###     ###     ###     ###     ###
-        #######################################################################################
-        #######################################################################################
-
         # TODO: move V1 to VAE and reuse V1VxLayer
-        logging.warn("constructing oriented_powermap in encoder")
-        self.use_abs = use_abs
-        self.use_ori_map = use_ori_map
-        match self.use_ori_map:
-            case "conv_7x7":
-                self.conv = nn.Sequential(
-                    nn.Conv2d(
-                        input_size[0],
-                        64,
-                        kernel_size=7,
-                        stride=2,
-                        padding=3,
-                        bias=True,
-                    ),
-                    nn.BatchNorm2d(64),
-                    nn.ReLU(),
-                    nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-                )
-                self.in_planes = 64
+        logging.info("constructing oriented_powermap in encoder")
 
-            case "phased":
-                if True:  # was inline
-                    self.oriented_powermap = OrientedPowerMap(
-                        input_size[0],
-                        kernel_size=init_kernel_size,
-                        frequencies=None,
-                        directions=directions,
-                    )
+        self.oriented_powermap = OrientedPowerMap(
+            input_size[0],
+            kernel_size=init_kernel_size,
+            frequencies=None,
+            directions=directions,
+        )
 
-                    self.freq_per_kernel = self.oriented_powermap.freq_per_kernel
-                    self.in_planes = self.oriented_powermap.out_channels
+        self.oriented_powermap_2 = OrientedPowerMap(
+            self.oriented_powermap.out_channels,
+            kernel_size=init_kernel_size,
+            frequencies=None,
+            directions=directions,
+        )
 
-                else:
-                    self.freq_per_kernel, kernels = make_oriented_map_stack_phases(
-                        in_channels=input_size[0],
-                        kernel_size=init_kernel_size,
-                        directions=directions,
-                    )
-                    kernel_count = len(self.freq_per_kernel)
-                    print(f"len(freq_per_kernel) = {kernel_count}")
+        self.oriented_powermap_3 = OrientedPowerMap(
+            self.oriented_powermap_2.out_channels,
+            kernel_size=init_kernel_size,
+            frequencies=None,
+            directions=directions,
+        )
 
-                    conv_1 = nn.Conv2d(
-                        input_size[0],
-                        kernel_count,
-                        kernel_size=init_kernel_size,
-                        stride=2,
-                        padding=init_kernel_size // 2,
-                        bias=True,
-                    )
-                    conv_1.weight = torch.nn.Parameter(kernels, requires_grad=False)
-
-                    self.conv_2 = nn.Conv2d(
-                        in_channels=kernel_count,
-                        out_channels=kernel_count // 2,
-                        kernel_size=1,
-                    )
-
-                    self.conv = nn.Sequential(
-                        conv_1,
-                        nn.BatchNorm2d(kernel_count),
-                        nn.ReLU(),
-                        nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-                        self.conv_2,
-                        nn.ReLU(),
-                    )
-
-                    self.in_planes = kernel_count // 2
-
-            case "unphased":
-                freq_per_kernel, weights_real_1, weights_imag_1 = make_oriented_map(
-                    in_channels=input_size[0],
-                    kernel_size=init_kernel_size,
-                    directions=directions,
-                    # stride=1,
-                )
-
-                self.conv_real_1 = nn.Conv2d(
-                    input_size[0],
-                    len(freq_per_kernel),
-                    kernel_size=init_kernel_size,
-                    stride=2,
-                    padding=init_kernel_size // 2,
-                    bias=True,
-                )
-                self.conv_real_1.weight = torch.nn.Parameter(
-                    weights_real_1, requires_grad=False
-                )
-
-                self.conv_imag_1 = nn.Conv2d(
-                    input_size[0],
-                    len(freq_per_kernel),
-                    kernel_size=init_kernel_size,
-                    stride=2,
-                    padding=init_kernel_size // 2,
-                    bias=True,
-                )
-                self.conv_imag_1.weight = torch.nn.Parameter(
-                    weights_imag_1, requires_grad=False
-                )
-
-                self.post_1 = nn.Sequential(
-                    nn.BatchNorm2d(len(freq_per_kernel)),
-                    nn.ReLU(),
-                    nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-                    nn.Conv2d(
-                        in_channels=len(freq_per_kernel),
-                        out_channels=len(freq_per_kernel),
-                        kernel_size=1,
-                    ),
-                    nn.ReLU(),
-                )
-
-                self.in_planes = len(freq_per_kernel)
-
-                print(f"self.in_planes {self.in_planes}")
-
-            case _:
-                raise ("unknown")
-
-        #######################################################################################
-        #######################################################################################
-        #     ###     ###     ###     ###     ###     ###     ###     ###
-        #   ###     ###     ###     ###     ###     ###     ###     ###
-        #     ###     ###     ###     ###     ###     ###     ###     ###
-        #######################################################################################
-        #######################################################################################
+        # self.freq_per_kernel = self.oriented_powermap.freq_per_kernel
+        self.in_planes = self.oriented_powermap_3.out_channels
 
         self.residual_blocks = nn.Sequential(
-            BasicBlock(self.in_planes, 64),
+            BasicBlock(self.in_planes, 64, stride=2),
             BasicBlock(64, 64),
             BasicBlock(64, 128, stride=2),
             BasicBlock(128, 128),
@@ -275,13 +178,9 @@ class Encoder(nn.Module):
 
         # determine output size from v1 + residual blocks
         test_input = torch.randn((1,) + input_size)
-        match self.use_ori_map:
-            case "unphased":
-                v1_output = self.conv_real_1(test_input)
-            case "conv_7x7":
-                v1_output = self.conv(test_input)
-            case "phased":
-                v1_output = self.oriented_powermap(test_input)
+        v1_output = self.oriented_powermap(test_input)
+        v1_output = self.oriented_powermap_2(v1_output)
+        v1_output = self.oriented_powermap_3(v1_output)
 
         output = self.residual_blocks(v1_output)
         self.input_size_to_fc = output.size()
@@ -291,39 +190,33 @@ class Encoder(nn.Module):
         self.fc_log_var = nn.Linear(self.input_size_to_fc.numel(), latent_dim)
 
     def forward(self, x):
-        """_summary_
+        """calculate forward encoder
 
         Args:
-            x (_type_): _description_
+            x (torch.Tensor): input tensor
 
         Returns:
-            _type_: _description_
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: (mean tensor, log_variance tensor, post-perceptual response)
         """
-        match self.use_ori_map:
-            case "unphased":
-                x_conv_real_1 = torch.square(self.conv_real_1(x))
-                x_conv_imag_1 = torch.square(self.conv_imag_1(x))
-                x = torch.add(x_conv_real_1, x_conv_imag_1)
-
-                if self.use_abs:
-                    x = torch.sqrt(x)
-                x = self.post_1(x)
-
-                x_after_v1 = x.clone()
-
-            case "phased":
-                x = self.oriented_powermap(x)
-                x_after_v1 = x.clone()
-
-            case "conv_7x7":
-                x = self.conv(x)
-                x_after_v1 = x.clone()
+        x = self.oriented_powermap(x)
+        x = self.oriented_powermap_2(x)
+        x = self.oriented_powermap_3(x)
+        x_after_v1 = x.clone()
 
         x = self.residual_blocks(x)
         x = x.view(x.size(0), -1)
         mu = self.fc_mu(x)
         log_var = self.fc_log_var(x)
         return mu, log_var, x_after_v1
+
+
+#######################################################################################
+#######################################################################################
+#     ###     ###     ###     ###     ###     ###     ###     ###
+#   ###     ###     ###     ###     ###     ###     ###     ###
+#     ###     ###     ###     ###     ###     ###     ###     ###
+#######################################################################################
+#######################################################################################
 
 
 if __name__ == "__main__":
