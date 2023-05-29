@@ -88,7 +88,7 @@ def plot_samples(
     """
 
     log_base = datetime.date.today().strftime("%Y%m%d")
-    fig, ax = plt.subplots(3, 5, figsize=(20, 12))
+    fig, ax = plt.subplots(3, 6, figsize=(20, 12))
     fig.suptitle(
         f"Epoch {start_epoch+1} Batch {batch_idx} Loss: {train_loss / train_count:.6f} ({recon_loss:.6f}/{kldiv_loss:.6f})"
     )
@@ -107,14 +107,26 @@ def plot_samples(
     x_recon = x_recon.detach().cpu().numpy()
 
     # additive blending
-    blend_data = np.stack([x_recon, x_xformed, x_recon], axis=-1)
-    blend_data = np.clip(blend_data, a_min=0.0, a_max=1.0)
+    blend_data_1 = np.stack([x_recon[:,1,...], x_xformed[:,1,...], x_recon[:,1,...]], axis=-1)
+    blend_data_1 = np.clip(blend_data_1, a_min=0.0, a_max=1.0)
+
+    blend_data_2 = np.stack([x_recon[:,2,...], x_xformed[:,2,...], x_recon[:,2,...]], axis=-1)
+    blend_data_2 = np.clip(blend_data_2, a_min=0.0, a_max=1.0)
+
+    blend_data_3 = np.stack([x_recon[:,3,...], x_xformed[:,3,...], x_recon[:,3,...]], axis=-1)
+    blend_data_3 = np.clip(blend_data_3, a_min=0.0, a_max=1.0)
 
     # print(v.shape)
-    for n in range(5):
-        ax[0][n].imshow(np.squeeze(x[n]), cmap="bone")
-        ax[1][n].imshow(np.squeeze(blend_data[n]))  # cmap='bone')
-        ax[2][n].imshow(np.squeeze(x_recon[n]), cmap="bone")
+    for n in range(2):
+        ax[0][n*3].imshow(np.squeeze(x[n,1,...]), cmap="bone")
+        ax[1][n*3].imshow(np.squeeze(blend_data_1[n]))  # cmap='bone')
+        ax[2][n*3].imshow(np.squeeze(x_recon[n,1,...]), cmap="bone")
+        ax[0][n*3+1].imshow(np.squeeze(x[n,2,...]), cmap="bone")
+        ax[1][n*3+1].imshow(np.squeeze(blend_data_2[n]))  # cmap='bone')
+        ax[2][n*3+1].imshow(np.squeeze(x_recon[n,2,...]), cmap="bone")
+        ax[0][n*3+2].imshow(np.squeeze(x[n,3,...]), cmap="bone")
+        ax[1][n*3+2].imshow(np.squeeze(blend_data_3[n]))  # cmap='bone')
+        ax[2][n*3+2].imshow(np.squeeze(x_recon[n,3,...]), cmap="bone")
 
     fig.tight_layout()
     fig.savefig(f"runs/{log_base}_current.png")

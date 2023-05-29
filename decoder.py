@@ -55,7 +55,7 @@ class Decoder(nn.Module):
         self.conv_transpose_1 = nn.Sequential(
             nn.Conv2d(
                 dim_to_conv_tranpose,
-                out_channels,
+                dim_to_conv_tranpose,
                 kernel_size=final_kernel_size,
                 stride=1,
                 padding=final_kernel_size // 2,
@@ -63,15 +63,15 @@ class Decoder(nn.Module):
                 # output_padding=0,
                 bias=True,
             ),
-            nn.BatchNorm2d(out_channels),
+            nn.BatchNorm2d(dim_to_conv_tranpose),
             nn.Upsample(scale_factor=2, mode="bilinear"),
             # nn.Sigmoid(),
         )
 
         self.conv_transpose_2 = nn.Sequential(
             nn.Conv2d(
-                out_channels,
-                out_channels,
+                dim_to_conv_tranpose,
+                dim_to_conv_tranpose,
                 kernel_size=final_kernel_size,
                 stride=1,
                 padding=final_kernel_size // 2,
@@ -79,14 +79,14 @@ class Decoder(nn.Module):
                 # output_padding=0,
                 bias=True,
             ),
-            nn.BatchNorm2d(out_channels),
+            nn.BatchNorm2d(dim_to_conv_tranpose),
             nn.Upsample(scale_factor=2, mode="bilinear"),
             # nn.Sigmoid(),
         )
 
         self.conv_transpose_3 = nn.Sequential(
             nn.Conv2d(
-                out_channels,
+                dim_to_conv_tranpose,
                 out_channels,
                 kernel_size=final_kernel_size,
                 stride=1,
@@ -99,6 +99,35 @@ class Decoder(nn.Module):
             nn.Upsample(scale_factor=2, mode="bilinear"),
             nn.Sigmoid(),
         )
+
+    def forward_dict(self, x):
+        """_summary_
+
+        Args:
+            x (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        x = self.fc(x)
+        x = x.view(
+            x.size(0),
+            self.size_from_fc[-3],
+            self.size_from_fc[-2],
+            self.size_from_fc[-1],
+        )
+        x_v4_back = self.residual_blocks(x)
+
+        x_v2_back = self.conv_transpose_1(x_v4_back)
+        x_v1_back = self.conv_transpose_2(x_v2_back)
+        x_back = self.conv_transpose_3(x_v1_back)
+
+        return {
+            "x_v4_back": x_v4_back,
+            "x_v2_back": x_v2_back,
+            "x_v1_back": x_v1_back,
+            "x_back": x_back,
+        }
 
     def forward(self, x):
         """_summary_

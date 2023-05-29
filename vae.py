@@ -45,12 +45,15 @@ def vae_loss(
     recon_loss_metrics,
     beta,
     x,
+    x_v1,
+    x_v2,
+    x_v4,
     mu,
     log_var,
-    x_recon,
-    v1_weight=None,
-    perc_loss=None,
-    perc_loss_recon=None,
+    x_v4_back,
+    x_v2_back,
+    x_v1_back,
+    x_back,
 ):
     """compute the total VAE loss, including reconstruction error and kullback-liebler divergence with a unit gaussian
 
@@ -69,36 +72,35 @@ def vae_loss(
     """
 
     x = clamp_01(x)
-    x_recon = clamp_01(x_recon)
-    perc_loss = clamp_01(perc_loss)
-    perc_loss_recon = clamp_01(perc_loss_recon)
-
-    if isinstance(v1_weight, np.ndarray):
-        v1_weight = torch.tensor(v1_weight).to(perc_loss.device)
-
-    if isinstance(v1_weight, torch.Tensor):
-        v1_weight = v1_weight.to(perc_loss.device)
-    elif v1_weight is not None:
-        raise ("unknown weight type")
+    x_back = clamp_01(x_back)
+    x_v1 = clamp_01(x_v1)
+    x_v1_back = clamp_01(x_v1_back)
+    x_v2 = clamp_01(x_v2)
+    x_v2_back = clamp_01(x_v2_back)
+    x_v4 = clamp_01(x_v4)
+    x_v4_back = clamp_01(x_v4_back)
 
     recon_loss = 0.0
     for loss_func in recon_loss_metrics:
-        recon_loss += loss_func(x, x_recon, reduction="mean")
-        if perc_loss is not None:
-            use_weight = (
-                v1_weight is not None  # and loss_func is not F.binary_cross_entropy
+        recon_loss += loss_func(x, x_back, reduction="mean")
+        if x_v1 is not None:
+            recon_loss += loss_func(
+                x_v1,
+                x_v1_back,
+                reduction="mean",
             )
-            v1_loss = loss_func(
-                perc_loss,
-                perc_loss_recon,
-                reduction="none" if use_weight else "mean",
+        if x_v2 is not None:
+            recon_loss += loss_func(
+                x_v2,
+                x_v2_back,
+                reduction="mean",
             )
-            if use_weight:
-                v1_loss = torch.mean(v1_loss, (0, -1, -2))
-                v1_loss = torch.mul(v1_weight, v1_loss)
-                v1_loss = torch.mean(v1_loss)
-
-            recon_loss += v1_loss
+        if x_v4 is not None:
+            recon_loss += loss_func(
+                x_v4,
+                x_v4_back,
+                reduction="mean",
+            )
 
     kld_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
     return recon_loss, kld_loss, recon_loss + beta * kld_loss
@@ -146,10 +148,8 @@ class VAE(nn.Module):
         self.encoder = Encoder(
             input_size,
             init_kernel_size=init_kernel_size,
-            directions=7,
+            directions=5,
             latent_dim=latent_dim,
-            use_ori_map="phased",  # means that there are 80 dimensions
-            use_abs=True,
         )
 
         # determine how many input dimensions to inverse convolve
@@ -173,39 +173,15 @@ class VAE(nn.Module):
             dictionary: dictionary of result tensors
         """
         # encode the input, returning the gaussian parameters
-        mu, log_var, perc_loss = self.encoder(x)
+        result_encoder = self.encoder.forward_dict(x)
 
         # reparameterization trick!
-        z = reparameterize(mu, log_var)
+        z = reparameterize(result_encoder["mu"], result_encoder["log_var"])
 
         # and decode back to the original
-        x_recon, perc_loss_recon = self.decoder(z)
+        result_decoder = self.decoder.forward_dict(z)
 
-        v1_weight = None  # need to determine how to calculate weight, given the conv1x1
-
-        # set up the v1 weight for weighted loss function
-        v1_weight = None  # need to determine how to calculate weight, given the conv1x1
-        if self.use_v1_weights and self.encoder.freq_per_kernel is not None:
-            # calculate freq_per_kernel given current self.conv_2
-            current_channels = torch.Tensor(self.encoder.freq_per_kernel)
-            current_channels = torch.unsqueeze(current_channels, -1)
-            current_channels = torch.unsqueeze(current_channels, -1)
-            current_channels = torch.log(current_channels)
-            current_channels = current_channels.to(x.device)
-            freq_per_conv_2_out = self.encoder.oriented_powermap.conv_2(
-                current_channels
-            )
-            freq_per_conv_2_out = torch.exp(freq_per_conv_2_out)
-            v1_weight = torch.Tensor(freq_per_conv_2_out)
-
-        return {
-            "x_recon": x_recon,
-            "mu": mu,
-            "log_var": log_var,
-            "perc_loss": perc_loss,
-            "perc_loss_recon": perc_loss_recon,
-            "v1_weight": v1_weight,
-        }
+        return {**result_encoder, **result_decoder}
 
     def forward(self, x):
         """computes the model for a given input x
@@ -217,7 +193,7 @@ class VAE(nn.Module):
             torch.Tensor: reconstructed x for the given input
         """
         result_dict = self.forward_dict(x)
-        return result_dict["x_recon"]
+        return result_dict["x_back"]
 
 
 ####
@@ -258,6 +234,7 @@ def load_model(input_size, device, kernel_size=11, directions=5, latent_dim=96):
     model = VAE(
         input_size,
         init_kernel_size=kernel_size,
+        # directions=directions,
         latent_dim=latent_dim,
         use_v1_weights=False,
     )
@@ -276,12 +253,12 @@ def load_model(input_size, device, kernel_size=11, directions=5, latent_dim=96):
     logging.info(
         summary(
             model,
-            input_size=(37, input_size[0], input_size[1], input_size[2]),
+            input_size=(3, input_size[0], input_size[1], input_size[2]),
             depth=10,
             col_names=[
                 "input_size",
                 "kernel_size",
-                "mult_adds",
+                # "mult_adds",
                 # "num_params",
                 "output_size",
                 "trainable",
@@ -323,10 +300,12 @@ def train_vae(device):
     input_size = train_dataset[0]["image"].shape
     logging.info(f"input_size = {input_size}")
 
-    train_loader = DataLoader(train_dataset, batch_size=40, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=10, shuffle=True)
     logging.info(f"train_dataset length = {len(train_dataset)}")
 
-    model, optimizer, start_epoch = load_model(input_size, device, latent_dim=48)
+    model, optimizer, start_epoch = load_model(
+        input_size, device, kernel_size=7, directions=5, latent_dim=96
+    )
     logging.info(set([p.device for p in model.parameters()]))
 
     # torch.autograd.set_detect_anomaly(True)
@@ -335,19 +314,19 @@ def train_vae(device):
     model.train()
     train_loss = 0
     train_count = -10
+
+    # release from this batch
+    torch.cuda.empty_cache()
     for batch_idx, batch in enumerate(train_loader):
         x = batch["image"].to(device)
 
         optimizer.zero_grad()
 
         result_dict = model.forward_dict(x)
-        if result_dict["v1_weight"] is not None:
-            result_dict["v1_weight"] = result_dict["v1_weight"].to(device)
-            logging.info(f"v1_weight = {result_dict['v1_weight']}")
 
         recon_loss, kldiv_loss, loss = vae_loss(
             recon_loss_metrics=(F.binary_cross_entropy, F.l1_loss),
-            beta=0.2,
+            beta=0.05,
             x=x,
             **result_dict,
         )
@@ -369,7 +348,7 @@ def train_vae(device):
                 train_count,
                 batch_idx,
                 x,
-                result_dict["x_recon"],
+                result_dict["x_back"],
                 recon_loss,
                 kldiv_loss,
             )
@@ -413,7 +392,7 @@ def infer_vae(device, input_size, source_dir):
     """
     print(f"inferring images in {source_dir}")
 
-    model, _, start_epoch = load_model(input_size, device, latent_dim=48)
+    model, _, start_epoch = load_model(input_size, device, kernel_size=7, directions=5, latent_dim=96)
 
     print(
         summary(
@@ -423,7 +402,7 @@ def infer_vae(device, input_size, source_dir):
             col_names=[
                 "input_size",
                 "kernel_size",
-                "mult_adds",
+                # "mult_adds",
                 # "num_params",
                 "output_size",
                 "trainable",
@@ -465,4 +444,4 @@ if "__main__" == __name__:
         train_vae(device)
 
     if args.infer:
-        infer_vae(device, (1, 512, 512), args.infer)
+        infer_vae(device, (1, 1024, 1024), args.infer)

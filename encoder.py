@@ -108,6 +108,7 @@ class Bottleneck(nn.Module):
         out = F.relu(out)
         return out
 
+
 #######################################################################################
 #######################################################################################
 #     ###     ###     ###     ###     ###     ###     ###     ###
@@ -116,6 +117,7 @@ class Bottleneck(nn.Module):
 #######################################################################################
 #######################################################################################
 
+
 class Encoder(nn.Module):
     def __init__(
         self,
@@ -123,8 +125,6 @@ class Encoder(nn.Module):
         init_kernel_size=9,
         directions=7,
         latent_dim=32,
-        use_ori_map="phased",
-        use_abs=False,
     ):
         """Resnet-34 based encoder
 
@@ -189,6 +189,25 @@ class Encoder(nn.Module):
         self.fc_mu = nn.Linear(self.input_size_to_fc.numel(), latent_dim)
         self.fc_log_var = nn.Linear(self.input_size_to_fc.numel(), latent_dim)
 
+    def forward_dict(self, x):
+        """perform forward pass and accumulate intermediate results
+
+        Args:
+            x (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        x_v1 = self.oriented_powermap(x)
+        x_v2 = self.oriented_powermap_2(x_v1)
+        x_v4 = self.oriented_powermap_3(x_v2)
+
+        x = self.residual_blocks(x_v4)
+        x = x.view(x.size(0), -1)
+        mu = self.fc_mu(x)
+        log_var = self.fc_log_var(x)
+        return {"x_v1": x_v1, "x_v2": x_v2, "x_v4": x_v4, "mu": mu, "log_var": log_var}
+
     def forward(self, x):
         """calculate forward encoder
 
@@ -196,18 +215,10 @@ class Encoder(nn.Module):
             x (torch.Tensor): input tensor
 
         Returns:
-            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: (mean tensor, log_variance tensor, post-perceptual response)
+            Tuple[torch.Tensor, torch.Tensor]: (mean tensor, log_variance tensor, post-perceptual response)
         """
-        x = self.oriented_powermap(x)
-        x = self.oriented_powermap_2(x)
-        x = self.oriented_powermap_3(x)
-        x_after_v1 = x.clone()
-
-        x = self.residual_blocks(x)
-        x = x.view(x.size(0), -1)
-        mu = self.fc_mu(x)
-        log_var = self.fc_log_var(x)
-        return mu, log_var, x_after_v1
+        result_dict = self.forward_dict(x)
+        return result_dict["mu"], result_dict["log_var"]
 
 
 #######################################################################################
