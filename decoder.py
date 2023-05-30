@@ -65,7 +65,7 @@ class Decoder(nn.Module):
             ),
             nn.BatchNorm2d(dim_to_conv_tranpose),
             nn.Upsample(scale_factor=2, mode="bilinear"),
-            # nn.Sigmoid(),
+            #nn.Sigmoid(),
         )
 
         self.conv_transpose_2 = nn.Sequential(
@@ -81,7 +81,7 @@ class Decoder(nn.Module):
             ),
             nn.BatchNorm2d(dim_to_conv_tranpose),
             nn.Upsample(scale_factor=2, mode="bilinear"),
-            # nn.Sigmoid(),
+            #nn.Sigmoid(),
         )
 
         self.conv_transpose_3 = nn.Sequential(
@@ -97,7 +97,7 @@ class Decoder(nn.Module):
             ),
             nn.BatchNorm2d(out_channels),
             nn.Upsample(scale_factor=2, mode="bilinear"),
-            nn.Sigmoid(),
+            #nn.Sigmoid(),
         )
 
     def forward_dict(self, x):
