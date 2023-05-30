@@ -107,26 +107,42 @@ def plot_samples(
     x_recon = x_recon.detach().cpu().numpy()
 
     # additive blending
-    blend_data_1 = np.stack([x_recon[:,1,...], x_xformed[:,1,...], x_recon[:,1,...]], axis=-1)
+    blend_data_1 = np.stack(
+        [x_recon[:, 1, ...], x_xformed[:, 1, ...], x_recon[:, 1, ...]], axis=-1
+    )
     blend_data_1 = np.clip(blend_data_1, a_min=0.0, a_max=1.0)
 
-    blend_data_2 = np.stack([x_recon[:,2,...], x_xformed[:,2,...], x_recon[:,2,...]], axis=-1)
+    blend_data_2 = np.stack(
+        [x_recon[:, 2, ...], x_xformed[:, 2, ...], x_recon[:, 2, ...]], axis=-1
+    )
     blend_data_2 = np.clip(blend_data_2, a_min=0.0, a_max=1.0)
 
-    blend_data_3 = np.stack([x_recon[:,3,...], x_xformed[:,3,...], x_recon[:,3,...]], axis=-1)
+    blend_data_3 = np.stack(
+        [x_recon[:, 3, ...], x_xformed[:, 3, ...], x_recon[:, 3, ...]], axis=-1
+    )
     blend_data_3 = np.clip(blend_data_3, a_min=0.0, a_max=1.0)
 
     # print(v.shape)
     for n in range(2):
-        ax[0][n*3].imshow(np.squeeze(x[n,1,...]), cmap="bone")
-        ax[1][n*3].imshow(np.squeeze(blend_data_1[n]))  # cmap='bone')
-        ax[2][n*3].imshow(np.squeeze(x_recon[n,1,...]), cmap="bone")
-        ax[0][n*3+1].imshow(np.squeeze(x[n,2,...]), cmap="bone")
-        ax[1][n*3+1].imshow(np.squeeze(blend_data_2[n]))  # cmap='bone')
-        ax[2][n*3+1].imshow(np.squeeze(x_recon[n,2,...]), cmap="bone")
-        ax[0][n*3+2].imshow(np.squeeze(x[n,3,...]), cmap="bone")
-        ax[1][n*3+2].imshow(np.squeeze(blend_data_3[n]))  # cmap='bone')
-        ax[2][n*3+2].imshow(np.squeeze(x_recon[n,3,...]), cmap="bone")
+        ax[0][n * 3].imshow(np.squeeze(x[n, 1, ...]), vmin=0.0, vmax=1.0, cmap="bone")
+        ax[1][n * 3].imshow(np.squeeze(blend_data_1[n]))  # cmap='bone')
+        ax[2][n * 3].imshow(
+            np.squeeze(x_recon[n, 1, ...]), vmin=0.0, vmax=1.0, cmap="bone"
+        )
+        ax[0][n * 3 + 1].imshow(
+            np.squeeze(x[n, 2, ...]), vmin=0.0, vmax=1.0, cmap="bone"
+        )
+        ax[1][n * 3 + 1].imshow(np.squeeze(blend_data_2[n]))  # cmap='bone')
+        ax[2][n * 3 + 1].imshow(
+            np.squeeze(x_recon[n, 2, ...]), cvmin=0.0, vmax=1.0, map="bone"
+        )
+        ax[0][n * 3 + 2].imshow(
+            np.squeeze(x[n, 3, ...]), vmin=0.0, vmax=1.0, cmap="bone"
+        )
+        ax[1][n * 3 + 2].imshow(np.squeeze(blend_data_3[n]))  # cmap='bone')
+        ax[2][n * 3 + 2].imshow(
+            np.squeeze(x_recon[n, 3, ...]), vmin=0.0, vmax=1.0, cmap="bone"
+        )
 
     fig.tight_layout()
     fig.savefig(f"runs/{log_base}_current.png")
