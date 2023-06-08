@@ -6,6 +6,7 @@ vae.py contains the main VAE class, loss function, and training and inference lo
 
 import os, datetime, logging
 from pathlib import Path
+from typing import Union
 
 import numpy as np
 
@@ -27,11 +28,35 @@ from encoder import Encoder
 from decoder import Decoder
 
 
-def clamp_01(x, eps=1e-6):
-    if x is None:
-        return None
+def clamp_01(
+    x: Union[dict, torch.Tensor, None], eps: float = 1e-6
+) -> Union[dict, torch.Tensor, None]:
+    """_summary_
 
-    return torch.clamp(x, eps, 1.0 - eps)
+    Args:
+        x (Union[dict, torch.Tensor, None]): _description_
+        eps (float, optional): _description_. Defaults to 1e-6.
+
+    Returns:
+        Union[dict, torch.Tensor, None]: _description_
+    """
+    match x:
+        case None:
+            return None
+
+        # if x is dict:
+        case dict():
+            return {
+                key: (
+                    value
+                    if key in ["mu", "log_var"]
+                    else torch.clamp(value, eps, 1.0 - eps)
+                )
+                for (key, value) in x.items()
+            }
+
+        case torch.Tensor():
+            return torch.clamp(x, eps, 1.0 - eps)
 
 
 #############################################################################################################
@@ -58,19 +83,22 @@ def vae_loss(
     """compute the total VAE loss, including reconstruction error and kullback-liebler divergence with a unit gaussian
 
     Args:
-        recon_loss_metrics (Tuple[Func]): example: (F.binary_cross_entropy,F.l1_loss,F.mse_loss)
+        recon_loss_metrics (Tuple[Func, float]): example: [(F.binary_cross_entropy,0.4),(F.l1_loss,1.0),(F.mse_loss,0.0)]
+        beta (_type_): _description_
         x (torch.Tensor): original tensor target to match
+        x_v1 (torch.Tensor): upward perceptual loss features. Defaults to None.
+        x_v2 (torch.Tensor): upward perceptual loss features. Defaults to None.
+        x_v4 (torch.Tensor): upward perceptual loss features. Defaults to None.
         mu (torch.Tensor): mean values for reparameterization
         log_var (torch.Tensor): log variance for reparameterization
-        x_recon (torch.Tensor): reconstructed value to which to compare
-        v1_weight (torch.Tensor, optional): weight vector for perceptual loss. Defaults to None.
-        perc_loss (torch.Tensor, optional): upward perceptual loss features. Defaults to None.
-        perc_loss_recon (torch.Tensor, optional): reconstructed perceptual loss features. Defaults to None.
+        x_v4_back (torch.Tensor): reconstructed perceptual loss features. Defaults to None.
+        x_v2_back (torch.Tensor): reconstructed perceptual loss features. Defaults to None.
+        x_v1_back (torch.Tensor): reconstructed perceptual loss features. Defaults to None.
+        x_back (torch.Tensor): reconstructed value to which to compare
 
     Returns:
         Tuple[float,float,float]: (reconstruction loss, kldiv loss, total loss)
     """
-
     x = clamp_01(x)
     x_back = clamp_01(x_back)
     x_v1 = clamp_01(x_v1)
@@ -79,27 +107,37 @@ def vae_loss(
     x_v2_back = clamp_01(x_v2_back)
     x_v4 = clamp_01(x_v4)
     x_v4_back = clamp_01(x_v4_back)
-
     recon_loss = 0.0
-    for loss_func in recon_loss_metrics:
-        recon_loss += loss_func(x, x_back, reduction="mean")
+    for loss_func, weight in recon_loss_metrics:
+        # for value, value_back in [(x, x_back)]:
+        recon_loss += loss_func(x, x_back, reduction="mean") * weight
+
         if x_v1 is not None:
-            recon_loss += loss_func(
-                x_v1,
-                x_v1_back,
-                reduction="mean",
+            recon_loss += (
+                loss_func(
+                    x_v1,
+                    x_v1_back,
+                    reduction="mean",
+                )
+                * weight
             )
         if x_v2 is not None:
-            recon_loss += loss_func(
-                x_v2,
-                x_v2_back,
-                reduction="mean",
+            recon_loss += (
+                loss_func(
+                    x_v2,
+                    x_v2_back,
+                    reduction="mean",
+                )
+                * weight
             )
         if x_v4 is not None:
-            recon_loss += loss_func(
-                x_v4,
-                x_v4_back,
-                reduction="mean",
+            recon_loss += (
+                loss_func(
+                    x_v4,
+                    x_v4_back,
+                    reduction="mean",
+                )
+                * weight
             )
 
     kld_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
@@ -129,9 +167,7 @@ def reparameterize(mu, log_var):
 
 
 class VAE(nn.Module):
-    def __init__(
-        self, input_size, init_kernel_size=13, latent_dim=32, use_v1_weights=False
-    ):
+    def __init__(self, input_size, init_kernel_size=13, latent_dim=32, train_stn=False):
         """construct a resnet 34 VAE module
 
         Args:
@@ -143,7 +179,72 @@ class VAE(nn.Module):
 
         self.input_size = input_size
         self.latent_dim = latent_dim
-        self.use_v1_weights = use_v1_weights
+
+        # prepare the STN preprocessor
+        # TODO: separate STN in to its own module, so it can be invoked on inputs to:
+        #           calculate xform and lut; and apply transform and lut to inputs
+        self.localization = nn.Sequential(
+            nn.Conv2d(input_size[0], 8, kernel_size=7),
+            nn.MaxPool2d(2, stride=2),
+            # nn.BatchNorm2d(8),
+            nn.ReLU(True),
+            nn.Conv2d(8, 16, kernel_size=5),
+            nn.MaxPool2d(2, stride=2),
+            # nn.BatchNorm2d(10),
+            nn.ReLU(True),
+            nn.Conv2d(16, 32, kernel_size=3),
+            nn.MaxPool2d(2, stride=2),
+            # nn.BatchNorm2d(10),
+            nn.ReLU(True),
+        )
+        for name, param in self.localization.named_parameters():
+            print(f"setting requires grad for {name} to {train_stn}")
+            param.requires_grad = train_stn
+
+        # determine size of localization_out
+        test_input = torch.randn((1,) + input_size)
+        localization_out = self.localization(test_input)
+        self.localization_out_numel = localization_out.shape.numel()
+        print(localization_out.shape)
+
+        self.fc_loc = nn.Sequential(
+            nn.Linear(self.localization_out_numel, 32),
+            nn.BatchNorm1d(32),
+            nn.ReLU(True),
+            nn.Linear(32, 2 * 3),
+        )
+
+        self.fc_loc[3].weight.data.zero_()
+        self.fc_loc[3].bias.data.copy_(
+            torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
+        )
+
+        for name, param in self.fc_loc.named_parameters():
+            print(f"setting requires grad for {name} to {train_stn}")
+            param.requires_grad = train_stn
+
+        ###########
+        use_lie_groups = False
+        if use_lie_groups:
+            self.fc_xlate = nn.Sequential(
+                nn.Linear(self.localization_out_numel, 32),
+                nn.BatchNorm1d(32),
+                nn.ReLU(True),
+                nn.Linear(32, 2),
+            )
+            print(
+                f"self.fc_xlate(localization_out).shape = {self.fc_xlate(localization_out).shape}"
+            )
+
+            self.fc_rotate = nn.Sequential(
+                nn.Linear(self.localization_out_numel, 32),
+                nn.BatchNorm1d(32),
+                nn.ReLU(True),
+                nn.Linear(32, 1),
+            )
+            print(
+                f"self.fc_rotate(localization_out).shape = {self.fc_rotate(localization_out).shape}"
+            )
 
         self.encoder = Encoder(
             input_size,
@@ -163,6 +264,30 @@ class VAE(nn.Module):
             dim_to_conv_tranpose=dim_to_conv_tranpose,
         )
 
+    def stn(self, x):
+        logging.debug(f"x.shape = {x.shape}")
+        xs = self.localization(x)
+        logging.debug(f"xs.shape = {xs.shape}; {'nan' if xs.isnan().any() else ''}")
+
+        xs = xs.view(-1, self.localization_out_numel)
+        logging.debug(f"xs.shape = {xs.shape}")
+
+        theta = self.fc_loc(xs)
+        theta = theta.view(-1, 2, 3)
+        logging.debug(f"theta.shape = {theta.shape}")
+
+        # print(f"theta.shape = {theta.shape}; {'nan' if theta.isnan().any() else ''}")
+        # theta_0 = theta[0].detach().cpu().numpy()
+        # logging.debug(f"theta[0] = {theta_0[0]} {theta_0[1]}")
+
+        # and apply
+        grid = F.affine_grid(theta, x.size())
+        x = F.grid_sample(x, grid, padding_mode="border")
+
+        # TODO: move STN resampling to dataset (with metadata csv)
+
+        return x
+
     def forward_dict(self, x):
         """perform forward pass, returning a dictionary of useful results for loss functions
 
@@ -172,8 +297,10 @@ class VAE(nn.Module):
         Returns:
             dictionary: dictionary of result tensors
         """
+        x_stn = self.stn(x)
+
         # encode the input, returning the gaussian parameters
-        result_encoder = self.encoder.forward_dict(x)
+        result_encoder = self.encoder.forward_dict(x_stn)
 
         # reparameterization trick!
         z = reparameterize(result_encoder["mu"], result_encoder["log_var"])
@@ -231,19 +358,19 @@ def load_model(input_size, device, kernel_size=11, directions=5, latent_dim=96):
     Returns:
         _type_: _description_
     """
+
+    start_epoch = 0
+    epoch_files = sorted(list(Path("runs").glob("*_epoch_*.zip")))
     model = VAE(
         input_size,
         init_kernel_size=kernel_size,
         # directions=directions,
         latent_dim=latent_dim,
-        use_v1_weights=False,
+        train_stn=len(epoch_files) >= 0,
     )
     model = model.to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
-
-    start_epoch = 0
-    epoch_files = sorted(list(Path("runs").glob("*_epoch_*.zip")))
     if len(epoch_files) > 0:
         dct = torch.load(epoch_files[-1], map_location=device)
         start_epoch = dct["epoch"]
@@ -290,6 +417,7 @@ def train_vae(device):
 
     train_dataset = Cxr8Dataset(
         root_path,
+        sz=512,
         transform=transforms.Compose(
             [
                 transforms.ToTensor(),
@@ -300,11 +428,11 @@ def train_vae(device):
     input_size = train_dataset[0]["image"].shape
     logging.info(f"input_size = {input_size}")
 
-    train_loader = DataLoader(train_dataset, batch_size=10, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     logging.info(f"train_dataset length = {len(train_dataset)}")
 
     model, optimizer, start_epoch = load_model(
-        input_size, device, kernel_size=7, directions=5, latent_dim=96
+        input_size, device, kernel_size=7, directions=5, latent_dim=42
     )
     logging.info(set([p.device for p in model.parameters()]))
 
@@ -323,10 +451,16 @@ def train_vae(device):
         optimizer.zero_grad()
 
         result_dict = model.forward_dict(x)
+        result_dict["x_v1"] = None
+        result_dict["x_v2"] = None
+        # result_dict = clamp_01(result_dict)
 
         recon_loss, kldiv_loss, loss = vae_loss(
-            recon_loss_metrics=(F.binary_cross_entropy, F.l1_loss),
-            beta=0.05,
+            recon_loss_metrics=(
+                (F.l1_loss, 1.0),
+                (F.binary_cross_entropy, 0.1),
+            ),
+            beta=0.1,
             x=x,
             **result_dict,
         )
@@ -341,6 +475,8 @@ def train_vae(device):
         train_loss = loss.item() + (train_loss if train_count > 0.0 else 0.0)
 
         if train_count % 10 == 9:
+            x_xform = model.stn(x)
+
             plot_samples(
                 model,
                 start_epoch,
@@ -348,6 +484,7 @@ def train_vae(device):
                 train_count,
                 batch_idx,
                 x,
+                x_xform,
                 result_dict["x_back"],
                 recon_loss,
                 kldiv_loss,
@@ -392,7 +529,9 @@ def infer_vae(device, input_size, source_dir):
     """
     print(f"inferring images in {source_dir}")
 
-    model, _, start_epoch = load_model(input_size, device, kernel_size=7, directions=5, latent_dim=96)
+    model, _, start_epoch = load_model(
+        input_size, device, kernel_size=7, directions=5, latent_dim=96
+    )
 
     print(
         summary(
@@ -444,4 +583,4 @@ if "__main__" == __name__:
         train_vae(device)
 
     if args.infer:
-        infer_vae(device, (1, 1024, 1024), args.infer)
+        infer_vae(device, (4, 1024, 1024), args.infer)
