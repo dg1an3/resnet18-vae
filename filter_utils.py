@@ -97,7 +97,7 @@ def gabor(
     [[0.0]]
     """
     return complex_exp(xs, ys, freq, angle_rad) * gauss(
-        xs, ys, sigma if sigma else 3.0 / freq
+        xs, ys, sigma if sigma else 1.0 / freq
     )
 
 
