@@ -52,8 +52,8 @@ class Cxr8Dataset(Dataset):
         self.input_size = (sz, sz)
 
         clip_limit = 4
-        self.clahe_64 = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(64, 64))
         self.clahe_16 = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(16, 16))
+        self.clahe_8 = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(8, 8))
 
         self.clahe_4 = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(4, 4))
 
@@ -71,12 +71,12 @@ class Cxr8Dataset(Dataset):
         image = 0.5 + (image - image_avg) / (3.0 * image_std)
 
         # image = cv2.normalize(image, None, 0.0, 1.0, cv2.NORM_MINMAX)
-        image_clahe_64 = self.apply_clahe(self.clahe_64, image)
         image_clahe_16 = self.apply_clahe(self.clahe_16, image)
+        image_clahe_8 = self.apply_clahe(self.clahe_8, image)
         image_clahe_4 = self.apply_clahe(self.clahe_4, image)
 
         image_result = np.stack(
-            [image, image_clahe_4, image_clahe_16, image_clahe_64], axis=-1
+            [image, image_clahe_4, image_clahe_8, image_clahe_16], axis=-1
         )
         return image_result.astype(np.float32)
 
