@@ -81,10 +81,10 @@ class OrientedPowerMap(nn.Module):
         self.conv = nn.Sequential(
             conv_1,
             nn.BatchNorm2d(kernel_count),
-            nn.ReLU(),
+            nn.ReLU(True),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
             self.conv_2,
-            nn.ReLU(),
+            nn.ReLU(True),
         )
 
         self.in_planes = kernel_count // 2
