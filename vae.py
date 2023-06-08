@@ -207,44 +207,17 @@ class VAE(nn.Module):
         self.localization_out_numel = localization_out.shape.numel()
         print(localization_out.shape)
 
-        self.fc_loc = nn.Sequential(
+
+        self.fc_xform = nn.Sequential(
             nn.Linear(self.localization_out_numel, 32),
             nn.BatchNorm1d(32),
             nn.ReLU(True),
-            nn.Linear(32, 2 * 3),
+            nn.Linear(32, 3),
         )
 
-        self.fc_loc[3].weight.data.zero_()
-        self.fc_loc[3].bias.data.copy_(
-            torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
-        )
-
-        for name, param in self.fc_loc.named_parameters():
+        for name, param in self.fc_xform.named_parameters():
             print(f"setting requires grad for {name} to {train_stn}")
             param.requires_grad = train_stn
-
-        ###########
-        use_lie_groups = False
-        if use_lie_groups:
-            self.fc_xlate = nn.Sequential(
-                nn.Linear(self.localization_out_numel, 32),
-                nn.BatchNorm1d(32),
-                nn.ReLU(True),
-                nn.Linear(32, 2),
-            )
-            print(
-                f"self.fc_xlate(localization_out).shape = {self.fc_xlate(localization_out).shape}"
-            )
-
-            self.fc_rotate = nn.Sequential(
-                nn.Linear(self.localization_out_numel, 32),
-                nn.BatchNorm1d(32),
-                nn.ReLU(True),
-                nn.Linear(32, 1),
-            )
-            print(
-                f"self.fc_rotate(localization_out).shape = {self.fc_rotate(localization_out).shape}"
-            )
 
         self.encoder = Encoder(
             input_size,
@@ -272,13 +245,38 @@ class VAE(nn.Module):
         xs = xs.view(-1, self.localization_out_numel)
         logging.debug(f"xs.shape = {xs.shape}")
 
-        theta = self.fc_loc(xs)
-        theta = theta.view(-1, 2, 3)
-        logging.debug(f"theta.shape = {theta.shape}")
+        fc_xform_out = self.fc_xform(xs)
+        angle_factor = 0.1
+        xlate_factor = 0.1
+
+        sa = torch.sin(angle_factor * fc_xform_out[:, 2]).view(-1, 1)
+        ca = torch.cos(angle_factor * fc_xform_out[:, 2]).view(-1, 1)
+        # print(f"ca = {ca}")
+        # print(f"sa = {sa}")
+
+        x_shift = xlate_factor * fc_xform_out[:, 0]
+        x_shift = x_shift.view(-1, 1)
+
+        y_shift = xlate_factor * fc_xform_out[:, 1]
+        y_shift = y_shift.view(-1, 1)
+
+        theta = torch.stack(
+            (
+                ca,
+                -sa,
+                -0.5 * (ca - sa) + x_shift + 0.5,
+                sa,
+                ca,
+                -0.5 * (sa + ca) + y_shift + 0.5,
+            ),
+            dim=-1,
+        )
+        theta  = theta .view(-1, 2, 3)        
+        # print(f"theta.shape = {theta.shape}")
 
         # print(f"theta.shape = {theta.shape}; {'nan' if theta.isnan().any() else ''}")
-        # theta_0 = theta[0].detach().cpu().numpy()
-        # logging.debug(f"theta[0] = {theta_0[0]} {theta_0[1]}")
+        theta_0 = theta[0].detach().cpu().numpy()
+        print(f"theta[0] = {theta_0[0]} {theta_0[1]}")
 
         # and apply
         grid = F.affine_grid(theta, x.size())
