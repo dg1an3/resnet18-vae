@@ -69,6 +69,7 @@ def plot_samples(
     train_count,
     batch_idx,
     x,
+    x_xform,
     x_recon,
     recon_loss,
     kldiv_loss,
@@ -97,28 +98,27 @@ def plot_samples(
     # fig.show()
     # TODO: move this to output to tensorboard
     x = x[0:5].clone()
-
-    x_xformed = x  # model.stn(x) if model.use_stn else x
-    x_xformed = x_xformed.detach().cpu().numpy()
-
     x = x.detach().cpu().numpy()
+
+    x_xform = x_xform[0:5].clone()
+    x_xform = x_xform.detach().cpu().numpy()
 
     x_recon = x_recon[0:5].clone()
     x_recon = x_recon.detach().cpu().numpy()
 
     # additive blending
     blend_data_1 = np.stack(
-        [x_recon[:, 1, ...], x_xformed[:, 1, ...], x_recon[:, 1, ...]], axis=-1
+        [x_recon[:, 1, ...], x_xform[:, 1, ...], x_recon[:, 1, ...]], axis=-1
     )
     blend_data_1 = np.clip(blend_data_1, a_min=0.0, a_max=1.0)
 
     blend_data_2 = np.stack(
-        [x_recon[:, 2, ...], x_xformed[:, 2, ...], x_recon[:, 2, ...]], axis=-1
+        [x_recon[:, 2, ...], x_xform[:, 2, ...], x_recon[:, 2, ...]], axis=-1
     )
     blend_data_2 = np.clip(blend_data_2, a_min=0.0, a_max=1.0)
 
     blend_data_3 = np.stack(
-        [x_recon[:, 3, ...], x_xformed[:, 3, ...], x_recon[:, 3, ...]], axis=-1
+        [x_recon[:, 3, ...], x_xform[:, 3, ...], x_recon[:, 3, ...]], axis=-1
     )
     blend_data_3 = np.clip(blend_data_3, a_min=0.0, a_max=1.0)
 
