@@ -121,6 +121,7 @@ class Bottleneck(nn.Module):
 class Encoder(nn.Module):
     def __init__(
         self,
+        device,
         input_size,
         init_kernel_size=9,
         directions=7,
@@ -142,25 +143,31 @@ class Encoder(nn.Module):
         logging.info("constructing oriented_powermap in encoder")
 
         self.oriented_powermap = OrientedPowerMap(
+            device,
             input_size[0],
             kernel_size=init_kernel_size,
             frequencies=None,
             directions=directions,
         )
+        self.oriented_powermap.to(device)
 
         self.oriented_powermap_2 = OrientedPowerMap(
+            device,            
             self.oriented_powermap.out_channels,
             kernel_size=init_kernel_size,
             frequencies=None,
             directions=directions,
         )
+        self.oriented_powermap_2.to(device)
 
         self.oriented_powermap_3 = OrientedPowerMap(
+            device,            
             self.oriented_powermap_2.out_channels,
             kernel_size=init_kernel_size,
             frequencies=None,
             directions=directions,
         )
+        self.oriented_powermap_3.to(device)
 
         # self.freq_per_kernel = self.oriented_powermap.freq_per_kernel
         self.in_planes = self.oriented_powermap_3.out_channels
@@ -175,9 +182,12 @@ class Encoder(nn.Module):
             BasicBlock(256, 512, stride=2),
             BasicBlock(512, 512),
         )
+        self.residual_blocks.to(device)
 
         # determine output size from v1 + residual blocks
         test_input = torch.randn((1,) + input_size)
+        test_input = test_input.to(device)
+
         v1_output = self.oriented_powermap(test_input)
         v1_output = self.oriented_powermap_2(v1_output)
         v1_output = self.oriented_powermap_3(v1_output)

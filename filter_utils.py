@@ -97,7 +97,7 @@ def gabor(
     [[0.0]]
     """
     return complex_exp(xs, ys, freq, angle_rad) * gauss(
-        xs, ys, sigma if sigma else 1.0 / freq
+        xs, ys, sigma if sigma else 1.5 / freq
     )
 
 
@@ -117,7 +117,7 @@ def make_gabor_bank(
 
     >>> xs,ys = mesh_grid(sz=3)
     >>> gauss(xs, ys, sigma=0.13)
-    [[0.0]]        
+    [[0.0]]
     """
     freq_per_kernel, kernels_complex = [], []
 
@@ -138,7 +138,7 @@ def make_gabor_bank(
 
 
 def kernels2weights(
-    kernels: np.ndarray, in_channels: int = 1, dtype=torch.float32
+    device, kernels: np.ndarray, in_channels: int = 1, dtype=torch.float32
 ) -> torch.Tensor:
     """_summary_
 
@@ -150,13 +150,15 @@ def kernels2weights(
     Returns:
         torch.Tensor: the resulting in_channels x out_channels x sz x sz tensor
     """
-    # kernels = np.repeat(kernels, in_channels, axis=0)
-    kernels = np.expand_dims(kernels, axis=1)
-    kernels = np.repeat(kernels, in_channels, axis=1)
-    return torch.tensor(kernels, dtype=dtype)
+    kernels = torch.tensor(kernels, dtype=dtype, device=device)
+    kernels = kernels.expand(in_channels, -1, -1, -1)
+    kernels = torch.permute(kernels, (1, 0, 2, 3))
+
+    return kernels
 
 
 def make_oriented_map(
+    device,
     in_channels: int = 3,
     kernel_size: int = 7,
     directions: int = 5,
@@ -178,6 +180,7 @@ def make_oriented_map(
     if frequencies is None:
         # populate with standard golden ratio frequencies
         phi = (5**0.5 + 1) / 2  # golden ratio
+        phi = 2.0
         frequencies = [phi**n for n in range(2, -2, -1)]
 
     # construct the gabor bank (which is a complex-valued tensor)
@@ -190,8 +193,8 @@ def make_oriented_map(
 
     # turn in to weights (single tensor for in_channels)
     weights_real, weights_imag = (
-        kernels2weights(kernels_real, in_channels),
-        kernels2weights(kernels_imag, in_channels),
+        kernels2weights(device, kernels_real, in_channels),
+        kernels2weights(device, kernels_imag, in_channels),
     )
     print(f"make_oriented_map: weights_real.shape = {weights_real.shape}")
 
@@ -199,6 +202,7 @@ def make_oriented_map(
 
 
 def make_oriented_map_stack_phases(
+    device,
     **kwargs,
 ) -> Tuple[List[float], torch.Tensor]:
     """stacks together the real and imaginary phases of the oriented map
@@ -212,9 +216,7 @@ def make_oriented_map_stack_phases(
     Returns:
         Tuple[int, torch.Tensor]: _description_
     """
-    freq_per_kernel, weights_real, weights_imag = make_oriented_map(
-        **kwargs
-    )
+    freq_per_kernel, weights_real, weights_imag = make_oriented_map(device, **kwargs)
 
     stacked_freq_per_kernel = freq_per_kernel + freq_per_kernel
     stacked_kernels = torch.concatenate((weights_real, weights_imag), dim=0)
