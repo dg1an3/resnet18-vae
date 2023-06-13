@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Union
 
 import numpy as np
+from oriented_powermap import OrientedPowerMap
 
 from show_utils import plot_samples
 
@@ -167,7 +168,9 @@ def reparameterize(mu, log_var):
 
 
 class VAE(nn.Module):
-    def __init__(self, input_size, init_kernel_size=13, latent_dim=32, train_stn=False):
+    def __init__(
+        self, device, input_size, init_kernel_size=13, latent_dim=32, train_stn=False
+    ):
         """construct a resnet 34 VAE module
 
         Args:
@@ -180,51 +183,89 @@ class VAE(nn.Module):
         self.input_size = input_size
         self.latent_dim = latent_dim
 
+        self.encoder = Encoder(
+            device,
+            input_size,
+            init_kernel_size=init_kernel_size,
+            directions=7,
+            latent_dim=latent_dim,
+        )
+
         # prepare the STN preprocessor
         # TODO: separate STN in to its own module, so it can be invoked on inputs to:
         #           calculate xform and lut; and apply transform and lut to inputs
-        self.localization = nn.Sequential(
-            nn.Conv2d(input_size[0], 8, kernel_size=7),
-            nn.MaxPool2d(2, stride=2),
-            # nn.BatchNorm2d(8),
-            nn.ReLU(True),
-            nn.Conv2d(8, 16, kernel_size=5),
-            nn.MaxPool2d(2, stride=2),
-            # nn.BatchNorm2d(10),
-            nn.ReLU(True),
-            nn.Conv2d(16, 32, kernel_size=3),
-            nn.MaxPool2d(2, stride=2),
-            # nn.BatchNorm2d(10),
-            nn.ReLU(True),
-        )
+        use_stn_oriented_phasemap = True
+        if use_stn_oriented_phasemap:
+            stn_oriented_phasemap_1 = self.encoder.oriented_powermap
+            # OrientedPowerMap(
+            #     device,
+            #     input_size[0],
+            #     kernel_size=init_kernel_size,
+            #     frequencies=None,
+            #     directions=5,
+            # )
+
+            stn_oriented_phasemap_2 = self.encoder.oriented_powermap_2
+            # OrientedPowerMap(
+            #     device,
+            #     stn_oriented_phasemap_1.out_channels,
+            #     kernel_size=init_kernel_size,
+            #     frequencies=None,
+            #     directions=5,
+            # )
+
+            stn_oriented_phasemap_3 = self.encoder.oriented_powermap_3
+            # OrientedPowerMap(
+            #     device,
+            #     stn_oriented_phasemap_2.out_channels,
+            #     kernel_size=init_kernel_size,
+            #     frequencies=None,
+            #     directions=5,
+            # )
+
+            self.localization = nn.Sequential(
+                stn_oriented_phasemap_1,
+                stn_oriented_phasemap_2,
+                stn_oriented_phasemap_3,
+            )
+        else:
+            self.localization = nn.Sequential(
+                nn.Conv2d(input_size[0], 8, kernel_size=7),
+                nn.MaxPool2d(2, stride=2),
+                # nn.BatchNorm2d(8),
+                nn.ReLU(True),
+                nn.Conv2d(8, 16, kernel_size=5),
+                nn.MaxPool2d(2, stride=2),
+                # nn.BatchNorm2d(10),
+                nn.ReLU(True),
+                nn.Conv2d(16, 32, kernel_size=3),
+                nn.MaxPool2d(2, stride=2),
+                # nn.BatchNorm2d(10),
+                nn.ReLU(True),
+            )
+
         for name, param in self.localization.named_parameters():
             print(f"setting requires grad for {name} to {train_stn}")
             param.requires_grad = train_stn
+        self.localization.to(device)
 
         # determine size of localization_out
         test_input = torch.randn((1,) + input_size)
+        test_input = test_input.to(device)
         localization_out = self.localization(test_input)
         self.localization_out_numel = localization_out.shape.numel()
         print(localization_out.shape)
-
 
         self.fc_xform = nn.Sequential(
             nn.Linear(self.localization_out_numel, 32),
             nn.BatchNorm1d(32),
             nn.ReLU(True),
-            nn.Linear(32, 3),
+            nn.Linear(32, 6),
         )
 
         for name, param in self.fc_xform.named_parameters():
             print(f"setting requires grad for {name} to {train_stn}")
             param.requires_grad = train_stn
-
-        self.encoder = Encoder(
-            input_size,
-            init_kernel_size=init_kernel_size,
-            directions=5,
-            latent_dim=latent_dim,
-        )
 
         # determine how many input dimensions to inverse convolve
         dim_to_conv_tranpose = self.encoder.in_planes
@@ -246,32 +287,51 @@ class VAE(nn.Module):
         logging.debug(f"xs.shape = {xs.shape}")
 
         fc_xform_out = self.fc_xform(xs)
-        angle_factor = 0.1
-        xlate_factor = 0.1
 
-        sa = torch.sin(angle_factor * fc_xform_out[:, 2]).view(-1, 1)
-        ca = torch.cos(angle_factor * fc_xform_out[:, 2]).view(-1, 1)
+        eps = 0.0
+
+        shear_factor = 0.1
+        shear = shear_factor * fc_xform_out[:, 5]
+        shear = shear.view(-1, 1)
+
+        scale_factor = 0.2
+        scale_x, scale_y = (
+            torch.sigmoid(scale_factor * fc_xform_out[:, 3]) * 2.0,
+            torch.sigmoid(scale_factor * fc_xform_out[:, 4]) * 2.0,
+        )
+        scale_x = scale_x.view(-1, 1)
+        scale_y = scale_y.view(-1, 1)
+
+        angle = fc_xform_out[:, 2]
+        # angle = torch.clamp(angle, -eps, eps)
+
+        angle_factor = 0.15
+        sa = torch.sin(angle_factor * angle).view(-1, 1)
+        ca = torch.cos(angle_factor * angle).view(-1, 1)
         # print(f"ca = {ca}")
         # print(f"sa = {sa}")
 
+        xlate_factor = 0.2
         x_shift = xlate_factor * fc_xform_out[:, 0]
         x_shift = x_shift.view(-1, 1)
+        # x_shift = torch.clamp(x_shift, -eps, eps)
 
         y_shift = xlate_factor * fc_xform_out[:, 1]
         y_shift = y_shift.view(-1, 1)
+        # y_shift = torch.clamp(y_shift, -eps, eps)
 
         theta = torch.stack(
             (
-                ca,
-                -sa,
+                scale_x * ca,
+                scale_y * -sa + shear * scale_y * ca,
                 -0.5 * (ca - sa) + x_shift + 0.5,
-                sa,
-                ca,
+                scale_x * sa,
+                scale_y * ca + shear * scale_y * sa,
                 -0.5 * (sa + ca) + y_shift + 0.5,
             ),
             dim=-1,
         )
-        theta  = theta .view(-1, 2, 3)        
+        theta = theta.view(-1, 2, 3)
         # print(f"theta.shape = {theta.shape}")
 
         # print(f"theta.shape = {theta.shape}; {'nan' if theta.isnan().any() else ''}")
@@ -280,7 +340,7 @@ class VAE(nn.Module):
 
         # and apply
         grid = F.affine_grid(theta, x.size())
-        x = F.grid_sample(x, grid, padding_mode="border")
+        x = F.grid_sample(x, grid, padding_mode="zeros")
 
         # TODO: move STN resampling to dataset (with metadata csv)
 
@@ -302,6 +362,18 @@ class VAE(nn.Module):
 
         # reparameterization trick!
         z = reparameterize(result_encoder["mu"], result_encoder["log_var"])
+
+        # clamp a subset of latent dimensions
+        init_dims = 96
+        z = torch.clamp(
+            z,
+            torch.tensor(
+                [-10.0] * init_dims + [0.0] * (self.latent_dim - init_dims)
+            ).to(z.device),
+            torch.tensor([10.0] * init_dims + [0.0] * (self.latent_dim - init_dims)).to(
+                z.device
+            ),
+        )
 
         # and decode back to the original
         result_decoder = self.decoder.forward_dict(z)
@@ -360,6 +432,7 @@ def load_model(input_size, device, kernel_size=11, directions=5, latent_dim=96):
     start_epoch = 0
     epoch_files = sorted(list(Path("runs").glob("*_epoch_*.zip")))
     model = VAE(
+        device,
         input_size,
         init_kernel_size=kernel_size,
         # directions=directions,
@@ -368,7 +441,7 @@ def load_model(input_size, device, kernel_size=11, directions=5, latent_dim=96):
     )
     model = model.to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
     if len(epoch_files) > 0:
         dct = torch.load(epoch_files[-1], map_location=device)
         start_epoch = dct["epoch"]
@@ -415,7 +488,7 @@ def train_vae(device):
 
     train_dataset = Cxr8Dataset(
         root_path,
-        sz=512,
+        sz=256,
         transform=transforms.Compose(
             [
                 transforms.ToTensor(),
@@ -426,11 +499,11 @@ def train_vae(device):
     input_size = train_dataset[0]["image"].shape
     logging.info(f"input_size = {input_size}")
 
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
     logging.info(f"train_dataset length = {len(train_dataset)}")
 
     model, optimizer, start_epoch = load_model(
-        input_size, device, kernel_size=7, directions=5, latent_dim=42
+        input_size, device, kernel_size=9, directions=7, latent_dim=96
     )
     logging.info(set([p.device for p in model.parameters()]))
 
@@ -451,12 +524,13 @@ def train_vae(device):
         result_dict = model.forward_dict(x)
         result_dict["x_v1"] = None
         result_dict["x_v2"] = None
+        result_dict["x_v4"] = None
         # result_dict = clamp_01(result_dict)
 
         recon_loss, kldiv_loss, loss = vae_loss(
             recon_loss_metrics=(
                 (F.l1_loss, 1.0),
-                (F.binary_cross_entropy, 0.1),
+                (F.binary_cross_entropy, 0.4),
             ),
             beta=0.1,
             x=x,
@@ -472,7 +546,7 @@ def train_vae(device):
         train_count += 1.0 if train_count != -1.0 else 2.0
         train_loss = loss.item() + (train_loss if train_count > 0.0 else 0.0)
 
-        if train_count % 10 == 9:
+        if train_count % 6 == 5:
             x_xform = model.stn(x)
 
             plot_samples(
@@ -487,6 +561,8 @@ def train_vae(device):
                 recon_loss,
                 kldiv_loss,
             )
+
+            # torch.cuda.empty_cache()
 
         logging.info(f"Epoch {start_epoch+1}: Batch {batch_idx}")
         logging.info(
@@ -578,6 +654,15 @@ if "__main__" == __name__:
     logging.info(f"torch operations on {device} device")
 
     if args.train:
+        train_vae(device)
+        train_vae(device)
+        train_vae(device)
+        train_vae(device)
+        train_vae(device)
+        train_vae(device)
+        train_vae(device)
+        train_vae(device)
+        train_vae(device)
         train_vae(device)
 
     if args.infer:

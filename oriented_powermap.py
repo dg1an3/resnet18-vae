@@ -27,6 +27,7 @@ class OrientedPowerMap(nn.Module):
 
     def __init__(
         self,
+        device,
         in_channels: int,
         kernel_size=11,
         frequencies=None,
@@ -54,6 +55,7 @@ class OrientedPowerMap(nn.Module):
         self.directions = directions
 
         self.freq_per_kernel, kernels = make_oriented_map_stack_phases(
+            device,
             in_channels=in_channels,
             kernel_size=kernel_size,
             directions=directions,
@@ -70,7 +72,7 @@ class OrientedPowerMap(nn.Module):
             padding_mode="replicate",
             bias=True,
         )
-        conv_1.weight = torch.nn.Parameter(kernels, requires_grad=False)
+        conv_1.weight = torch.nn.Parameter(kernels, requires_grad=True)
 
         self.conv_2 = nn.Conv2d(
             in_channels=kernel_count,
