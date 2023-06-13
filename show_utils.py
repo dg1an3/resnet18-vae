@@ -97,14 +97,17 @@ def plot_samples(
 
     # fig.show()
     # TODO: move this to output to tensorboard
+    x = x.detach().cpu()
     x = x[0:5].clone()
-    x = x.detach().cpu().numpy()
+    x = x.numpy()
 
+    x_xform = x_xform.detach().cpu()
     x_xform = x_xform[0:5].clone()
-    x_xform = x_xform.detach().cpu().numpy()
+    x_xform = x_xform.numpy()
 
+    x_recon = x_recon.detach().cpu()
     x_recon = x_recon[0:5].clone()
-    x_recon = x_recon.detach().cpu().numpy()
+    x_recon = x_recon.numpy()
 
     # additive blending
     blend_data_1 = np.stack(
@@ -127,21 +130,30 @@ def plot_samples(
         ax[0][n * 3].imshow(np.squeeze(x[n, 1, ...]), vmin=0.0, vmax=1.0, cmap="bone")
         ax[1][n * 3].imshow(np.squeeze(blend_data_1[n]))  # cmap='bone')
         ax[2][n * 3].imshow(
-            np.squeeze(x_recon[n, 1, ...]), vmin=0.0, vmax=1.0, cmap="bone"
+            np.around(400.0 * np.squeeze(x_recon[n, 1, ...]), decimals=0),
+            vmin=0.0,
+            vmax=400.0,
+            cmap="bone",
         )
         ax[0][n * 3 + 1].imshow(
             np.squeeze(x[n, 2, ...]), vmin=0.0, vmax=1.0, cmap="bone"
         )
         ax[1][n * 3 + 1].imshow(np.squeeze(blend_data_2[n]))  # cmap='bone')
         ax[2][n * 3 + 1].imshow(
-            np.squeeze(x_recon[n, 2, ...]), vmin=0.0, vmax=1.0, cmap="bone"
+            np.around(400.0 * np.squeeze(x_recon[n, 2, ...]), decimals=0),
+            vmin=0.0,
+            vmax=400.0,
+            cmap="bone",
         )
         ax[0][n * 3 + 2].imshow(
             np.squeeze(x[n, 3, ...]), vmin=0.0, vmax=1.0, cmap="bone"
         )
         ax[1][n * 3 + 2].imshow(np.squeeze(blend_data_3[n]))  # cmap='bone')
         ax[2][n * 3 + 2].imshow(
-            np.squeeze(x_recon[n, 3, ...]), vmin=0.0, vmax=1.0, cmap="bone"
+            np.around(400.0 * np.squeeze(x_recon[n, 3, ...]), decimals=0),
+            vmin=0.0,
+            vmax=400.0,
+            cmap="bone",
         )
 
     fig.tight_layout()
