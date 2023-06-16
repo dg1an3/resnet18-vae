@@ -290,9 +290,10 @@ class VAE(nn.Module):
 
         eps = 0.0
 
-        shear_factor = 0.1
+        shear_factor = 0.05
         shear = shear_factor * fc_xform_out[:, 5]
         shear = shear.view(-1, 1)
+        shear = torch.clamp(shear, -eps, eps)
 
         scale_factor = 0.2
         scale_x, scale_y = (
@@ -303,9 +304,9 @@ class VAE(nn.Module):
         scale_y = scale_y.view(-1, 1)
 
         angle = fc_xform_out[:, 2]
-        # angle = torch.clamp(angle, -eps, eps)
+        #angle = torch.clamp(angle, -eps, eps)
 
-        angle_factor = 0.15
+        angle_factor = 0.05
         sa = torch.sin(angle_factor * angle).view(-1, 1)
         ca = torch.cos(angle_factor * angle).view(-1, 1)
         # print(f"ca = {ca}")
@@ -314,11 +315,11 @@ class VAE(nn.Module):
         xlate_factor = 0.2
         x_shift = xlate_factor * fc_xform_out[:, 0]
         x_shift = x_shift.view(-1, 1)
-        # x_shift = torch.clamp(x_shift, -eps, eps)
+        #x_shift = torch.clamp(x_shift, -eps, eps)
 
         y_shift = xlate_factor * fc_xform_out[:, 1]
         y_shift = y_shift.view(-1, 1)
-        # y_shift = torch.clamp(y_shift, -eps, eps)
+        #y_shift = torch.clamp(y_shift, -eps, eps)
 
         theta = torch.stack(
             (
@@ -488,7 +489,7 @@ def train_vae(device):
 
     train_dataset = Cxr8Dataset(
         root_path,
-        sz=256,
+        sz=512,
         transform=transforms.Compose(
             [
                 transforms.ToTensor(),
@@ -499,7 +500,7 @@ def train_vae(device):
     input_size = train_dataset[0]["image"].shape
     logging.info(f"input_size = {input_size}")
 
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
     logging.info(f"train_dataset length = {len(train_dataset)}")
 
     model, optimizer, start_epoch = load_model(
@@ -530,7 +531,7 @@ def train_vae(device):
         recon_loss, kldiv_loss, loss = vae_loss(
             recon_loss_metrics=(
                 (F.l1_loss, 1.0),
-                (F.binary_cross_entropy, 0.4),
+                (F.binary_cross_entropy, 0.2),
             ),
             beta=0.1,
             x=x,
@@ -570,7 +571,7 @@ def train_vae(device):
         )
 
         # release from this batch
-        # torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
 
     logging.info(f"saving model for epoch {start_epoch+1}")
     torch.save(

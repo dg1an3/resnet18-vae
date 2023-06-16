@@ -72,7 +72,7 @@ class OrientedPowerMap(nn.Module):
             padding_mode="replicate",
             bias=True,
         )
-        conv_1.weight = torch.nn.Parameter(kernels, requires_grad=True)
+        conv_1.weight = torch.nn.Parameter(kernels, requires_grad=False)
 
         self.conv_2 = nn.Conv2d(
             in_channels=kernel_count,
