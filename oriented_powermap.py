@@ -32,6 +32,7 @@ class OrientedPowerMap(nn.Module):
         kernel_size=11,
         frequencies=None,
         directions=7,
+        use_powermap=False,
     ):
         """construct an OrientedPowerMap
 
@@ -54,14 +55,30 @@ class OrientedPowerMap(nn.Module):
 
         self.directions = directions
 
-        self.freq_per_kernel, kernels = make_oriented_map_stack_phases(
-            device,
-            in_channels=in_channels,
-            kernel_size=kernel_size,
-            directions=directions,
-        )
+        if use_powermap:
+            self.freq_per_kernel, kernels_real, kernels_imag = make_oriented_map(
+                device,
+                in_channels=in_channels,
+                kernel_size=kernel_size,
+                directions=directions,
+            )
+        else:
+            self.freq_per_kernel, kernels = make_oriented_map_stack_phases(
+                device,
+                in_channels=in_channels,
+                kernel_size=kernel_size,
+                directions=directions,
+            )
+        
+
         kernel_count = len(self.freq_per_kernel)
         print(f"len(freq_per_kernel) = {kernel_count}")
+
+        conv_pre = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=in_channels,
+            kernel_size=1,
+        )
 
         conv_1 = nn.Conv2d(
             in_channels,
@@ -81,6 +98,7 @@ class OrientedPowerMap(nn.Module):
         )
 
         self.conv = nn.Sequential(
+            conv_pre,
             conv_1,
             nn.BatchNorm2d(kernel_count),
             nn.ReLU(True),
