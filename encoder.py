@@ -148,6 +148,7 @@ class Encoder(nn.Module):
             kernel_size=init_kernel_size,
             frequencies=None,
             directions=directions,
+            use_powermap=False,
         )
         self.oriented_powermap.to(device)
 
