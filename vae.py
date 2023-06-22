@@ -228,10 +228,11 @@ class VAE(nn.Module):
         )
 
         # initialize to zero weights and biases
-        torch.nn.init.zeros_(self.fc_xform[0].weight)
-        torch.nn.init.zeros_(self.fc_xform[0].bias)
-        torch.nn.init.zeros_(self.fc_xform[-1].weight)
-        torch.nn.init.zeros_(self.fc_xform[-1].bias)
+        eps = 1e-1
+        torch.nn.init.uniform_(self.fc_xform[0].weight, -eps, eps)
+        torch.nn.init.uniform_(self.fc_xform[0].bias, -eps, eps)
+        torch.nn.init.uniform_(self.fc_xform[-1].weight, -eps, eps)
+        torch.nn.init.uniform_(self.fc_xform[-1].bias, -eps, eps)
 
         for name, param in self.fc_xform.named_parameters():
             print(f"setting requires grad for {name} to {train_stn}")
@@ -396,7 +397,13 @@ class VAE(nn.Module):
 
 
 def load_model(
-    input_size, device, kernel_size=11, directions=5, latent_dim=96, train_stn=False
+    input_size,
+    device,
+    kernel_size=11,
+    directions=5,
+    latent_dim=96,
+    train_stn=False,
+    train_non_stn=True,
 ):
     """_summary_
 
@@ -420,7 +427,7 @@ def load_model(
         # directions=directions,
         latent_dim=latent_dim,
         train_stn=train_stn,  # len(epoch_files) >= 0,
-        train_non_stn=not (train_stn),
+        train_non_stn=train_non_stn,
     )
     model = model.to(device)
 
@@ -459,7 +466,7 @@ def load_model(
 ###########################################
 
 
-def train_vae(device, train_stn=False, l1_weight=0.9):
+def train_vae(device, train_stn=False, train_non_stn=True, l1_weight=0.9):
     """perform training of the vae model
 
     Args:
@@ -471,7 +478,7 @@ def train_vae(device, train_stn=False, l1_weight=0.9):
 
     train_dataset = Cxr8Dataset(
         root_path,
-        sz=256,
+        sz=512,
         transform=transforms.Compose(
             [
                 transforms.ToTensor(),
@@ -492,6 +499,7 @@ def train_vae(device, train_stn=False, l1_weight=0.9):
         directions=7,
         latent_dim=96,
         train_stn=train_stn,
+        train_non_stn=train_non_stn,
     )
     logging.info(set([p.device for p in model.parameters()]))
 
@@ -642,10 +650,16 @@ if "__main__" == __name__:
     logging.info(f"torch operations on {device} device")
 
     if args.train:
+        train_vae(device, train_stn=True, train_non_stn=True, l1_weight=0.9)
         for _ in range(3):
             for l1_weight in [0.1, 0.9]:
                 for train_stn in [False, True]:
-                    train_vae(device, train_stn=train_stn, l1_weight=l1_weight)
+                    train_vae(
+                        device,
+                        train_stn=train_stn,
+                        train_non_stn=not (train_stn),
+                        l1_weight=l1_weight,
+                    )
 
     if args.infer:
         infer_vae(device, (4, 1024, 1024), args.infer)

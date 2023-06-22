@@ -69,7 +69,6 @@ class OrientedPowerMap(nn.Module):
                 kernel_size=kernel_size,
                 directions=directions,
             )
-        
 
         kernel_count = len(self.freq_per_kernel)
         print(f"len(freq_per_kernel) = {kernel_count}")
@@ -107,6 +106,16 @@ class OrientedPowerMap(nn.Module):
             nn.ReLU(True),
         )
 
+
+        self.shortcut = nn.Sequential(
+            nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=self.conv_2.out_channels,
+                kernel_size=1,
+            ),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+        )
+        
         self.in_planes = kernel_count // 2
         self.out_channels = self.conv_2.out_channels
 
@@ -119,7 +128,8 @@ class OrientedPowerMap(nn.Module):
         Returns:
             _type_: _description_
         """
-        x = self.conv(x)
+        shortcut_x = self.shortcut(x)
+        x = self.conv(x) + shortcut_x
         return x
 
 
