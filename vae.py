@@ -202,10 +202,12 @@ class VAE(nn.Module):
         stn_oriented_phasemap_1 = self.encoder.oriented_powermap
         stn_oriented_phasemap_2 = self.encoder.oriented_powermap_2
         stn_oriented_phasemap_3 = self.encoder.oriented_powermap_3
+        stn_oriented_phasemap_4 = self.encoder.oriented_powermap_4
         self.localization = nn.Sequential(
             stn_oriented_phasemap_1,
             stn_oriented_phasemap_2,
             stn_oriented_phasemap_3,
+            stn_oriented_phasemap_4,
         )
 
         # for name, param in self.localization.named_parameters():
@@ -228,11 +230,11 @@ class VAE(nn.Module):
         )
 
         # initialize to zero weights and biases
-        eps = 1e-1
-        torch.nn.init.uniform_(self.fc_xform[0].weight, -eps, eps)
-        torch.nn.init.uniform_(self.fc_xform[0].bias, -eps, eps)
-        torch.nn.init.uniform_(self.fc_xform[-1].weight, -eps, eps)
-        torch.nn.init.uniform_(self.fc_xform[-1].bias, -eps, eps)
+        eps = 1e-2
+        torch.nn.init.normal_(self.fc_xform[0].weight, 0.0, eps)
+        torch.nn.init.normal_(self.fc_xform[0].bias, 0.0, eps)
+        torch.nn.init.normal_(self.fc_xform[-1].weight, 0.0, eps)
+        torch.nn.init.normal_(self.fc_xform[-1].bias, 0.0, eps)
 
         for name, param in self.fc_xform.named_parameters():
             print(f"setting requires grad for {name} to {train_stn}")
@@ -286,7 +288,7 @@ class VAE(nn.Module):
         angle = fc_xform_out[:, 2]
         # angle = torch.clamp(angle, -eps, eps)
 
-        angle_factor = 0.5
+        angle_factor = 0.25
         sa = torch.sin(angle_factor * angle).view(-1, 1)
         ca = torch.cos(angle_factor * angle).view(-1, 1)
         # print(f"ca = {ca}")
@@ -489,7 +491,7 @@ def train_vae(device, train_stn=False, train_non_stn=True, l1_weight=0.9):
     input_size = train_dataset[0]["image"].shape
     logging.info(f"input_size = {input_size}")
 
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
     logging.info(f"train_dataset length = {len(train_dataset)}")
 
     model, optimizer, start_epoch = load_model(
@@ -518,7 +520,7 @@ def train_vae(device, train_stn=False, train_non_stn=True, l1_weight=0.9):
         optimizer.zero_grad()
 
         result_dict = model.forward_dict(x)
-        result_dict["x_v1"] = None
+        # result_dict["x_v1"] = None
         result_dict["x_v2"] = None
         result_dict["x_v4"] = None
         # result_dict = clamp_01(result_dict)

@@ -42,9 +42,9 @@ class Decoder(nn.Module):
         self.fc = nn.Linear(latent_dim, size_from_fc.numel())
 
         self.residual_blocks = nn.Sequential(
-            ReverseBasicBlock(512, 256, stride=2),
-            ReverseBasicBlock(256, 256),
-            ReverseBasicBlock(256, 128, stride=2),
+            ReverseBasicBlock(128, 128, stride=2),
+            ReverseBasicBlock(128, 128),
+            ReverseBasicBlock(128, 128, stride=2),
             ReverseBasicBlock(128, 128),
             ReverseBasicBlock(128, 64, stride=2),
             ReverseBasicBlock(64, 64),
@@ -87,6 +87,22 @@ class Decoder(nn.Module):
         self.conv_transpose_3 = nn.Sequential(
             nn.Conv2d(
                 dim_to_conv_tranpose,
+                dim_to_conv_tranpose,                
+                kernel_size=final_kernel_size,
+                stride=1,
+                padding=final_kernel_size // 2,
+                padding_mode="replicate",
+                # output_padding=0,
+                bias=True,
+            ),
+            nn.BatchNorm2d(dim_to_conv_tranpose),
+            nn.Upsample(scale_factor=2, mode="bilinear"),
+            #nn.Sigmoid(),
+        )
+
+        self.conv_transpose_4 = nn.Sequential(
+            nn.Conv2d(
+                dim_to_conv_tranpose,
                 out_channels,
                 kernel_size=final_kernel_size,
                 stride=1,
@@ -116,11 +132,12 @@ class Decoder(nn.Module):
             self.size_from_fc[-2],
             self.size_from_fc[-1],
         )
-        x_v4_back = self.residual_blocks(x)
+        x_v4_2_back = self.residual_blocks(x)
 
-        x_v2_back = self.conv_transpose_1(x_v4_back)
-        x_v1_back = self.conv_transpose_2(x_v2_back)
-        x_back = self.conv_transpose_3(x_v1_back)
+        x_v4_back = self.conv_transpose_1(x_v4_2_back)
+        x_v2_back = self.conv_transpose_2(x_v4_back)
+        x_v1_back = self.conv_transpose_3(x_v2_back)
+        x_back = self.conv_transpose_4(x_v1_back)
 
         return {
             "x_v4_back": x_v4_back,
@@ -154,6 +171,7 @@ class Decoder(nn.Module):
         x = self.conv_transpose_1(x)
         x = self.conv_transpose_2(x)
         x = self.conv_transpose_3(x)
+        x = self.conv_transpose_4(x)
 
         return x, x_before_v1
 
