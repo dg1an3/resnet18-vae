@@ -33,6 +33,10 @@ class OrientedPowerMap(nn.Module):
         frequencies=None,
         directions=7,
         use_powermap=False,
+        out_res='None', # '/2' '*2'
+        up_direction=True,
+        out_channels=None,
+        kernels_and_freqs=None,
     ):
         """construct an OrientedPowerMap
 
@@ -63,12 +67,15 @@ class OrientedPowerMap(nn.Module):
                 directions=directions,
             )
         else:
-            self.freq_per_kernel, kernels = make_oriented_map_stack_phases(
-                device,
-                in_channels=in_channels,
-                kernel_size=kernel_size,
-                directions=directions,
-            )
+            if kernels_and_freqs is None:
+                self.freq_per_kernel, kernels = make_oriented_map_stack_phases(
+                    device,
+                    in_channels=in_channels,
+                    kernel_size=kernel_size,
+                    directions=directions,
+                )
+            else:
+                self.freq_per_kernel, kernels = kernels_and_freqs
 
         kernel_count = len(self.freq_per_kernel)
         print(f"len(freq_per_kernel) = {kernel_count}")
@@ -92,7 +99,7 @@ class OrientedPowerMap(nn.Module):
 
         self.conv_2 = nn.Conv2d(
             in_channels=kernel_count,
-            out_channels=kernel_count // 2,
+            out_channels=kernel_count // 2 if out_channels is None else out_channels,
             kernel_size=1,
         )
 
@@ -101,11 +108,12 @@ class OrientedPowerMap(nn.Module):
             conv_1,
             nn.BatchNorm2d(kernel_count),
             nn.ReLU(True),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+            if up_direction
+            else nn.Upsample(scale_factor=2, mode="bilinear"),
             self.conv_2,
             nn.ReLU(True),
         )
-
 
         self.shortcut = nn.Sequential(
             nn.Conv2d(
@@ -113,9 +121,11 @@ class OrientedPowerMap(nn.Module):
                 out_channels=self.conv_2.out_channels,
                 kernel_size=1,
             ),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+            if up_direction
+            else nn.Upsample(scale_factor=2, mode="bilinear"),
         )
-        
+
         self.in_planes = kernel_count // 2
         self.out_channels = self.conv_2.out_channels
 

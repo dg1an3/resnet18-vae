@@ -244,6 +244,7 @@ class VAE(nn.Module):
         dim_to_conv_tranpose = self.encoder.in_planes
 
         self.decoder = Decoder(
+            device,
             self.encoder.input_size_to_fc,
             latent_dim=latent_dim,
             out_channels=input_size[0],
@@ -347,7 +348,7 @@ class VAE(nn.Module):
         z = reparameterize(result_encoder["mu"], result_encoder["log_var"])
 
         # clamp a subset of latent dimensions
-        init_dims = 11
+        init_dims = 29
         z = torch.clamp(
             z,
             torch.tensor(

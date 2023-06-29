@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from torchinfo import summary
 
 from functools import reduce
+from oriented_powermap import OrientedPowerMap
 
 # TODO: insert this directly
 from reverse_basic_block import ReverseBasicBlock
@@ -21,6 +22,7 @@ class Decoder(nn.Module):
 
     def __init__(
         self,
+        device,        
         size_from_fc: torch.Size,
         latent_dim=32,
         out_channels=3,
@@ -52,69 +54,113 @@ class Decoder(nn.Module):
             ReverseBasicBlock(64, dim_to_conv_tranpose),
         )
 
-        self.conv_transpose_1 = nn.Sequential(
-            nn.Conv2d(
-                dim_to_conv_tranpose,
-                dim_to_conv_tranpose,
-                kernel_size=final_kernel_size,
-                stride=1,
-                padding=final_kernel_size // 2,
-                padding_mode="replicate",
-                # output_padding=0,
-                bias=True,
-            ),
-            nn.BatchNorm2d(dim_to_conv_tranpose),
-            nn.Upsample(scale_factor=2, mode="bilinear"),
-            #nn.Sigmoid(),
+        self.conv_transpose_1 = OrientedPowerMap(
+            device,
+            in_channels=dim_to_conv_tranpose,
+            kernel_size=final_kernel_size,
+            frequencies=None,
+            directions=7,
+            up_direction=False,
+            out_channels=dim_to_conv_tranpose,
         )
+        self.conv_transpose_1.to(device)
 
-        self.conv_transpose_2 = nn.Sequential(
-            nn.Conv2d(
-                dim_to_conv_tranpose,
-                dim_to_conv_tranpose,
-                kernel_size=final_kernel_size,
-                stride=1,
-                padding=final_kernel_size // 2,
-                padding_mode="replicate",
-                # output_padding=0,
-                bias=True,
-            ),
-            nn.BatchNorm2d(dim_to_conv_tranpose),
-            nn.Upsample(scale_factor=2, mode="bilinear"),
-            #nn.Sigmoid(),
-        )
+        # nn.Sequential(
+        #     nn.Conv2d(
+        #         dim_to_conv_tranpose,
+        #         dim_to_conv_tranpose,
+        #         kernel_size=final_kernel_size,
+        #         stride=1,
+        #         padding=final_kernel_size // 2,
+        #         padding_mode="replicate",
+        #         # output_padding=0,
+        #         bias=True,
+        #     ),
+        #     nn.BatchNorm2d(dim_to_conv_tranpose),
+        #     nn.Upsample(scale_factor=2, mode="bilinear"),
+        #     #nn.Sigmoid(),
+        # )
 
-        self.conv_transpose_3 = nn.Sequential(
-            nn.Conv2d(
-                dim_to_conv_tranpose,
-                dim_to_conv_tranpose,                
-                kernel_size=final_kernel_size,
-                stride=1,
-                padding=final_kernel_size // 2,
-                padding_mode="replicate",
-                # output_padding=0,
-                bias=True,
-            ),
-            nn.BatchNorm2d(dim_to_conv_tranpose),
-            nn.Upsample(scale_factor=2, mode="bilinear"),
-            #nn.Sigmoid(),
+        self.conv_transpose_2 = OrientedPowerMap(
+            device,
+            in_channels=dim_to_conv_tranpose,
+            kernel_size=final_kernel_size,
+            frequencies=None,
+            directions=7,
+            up_direction=False,
+            out_channels=dim_to_conv_tranpose,            
         )
+        self.conv_transpose_2.to(device)
 
-        self.conv_transpose_4 = nn.Sequential(
-            nn.Conv2d(
-                dim_to_conv_tranpose,
-                out_channels,
-                kernel_size=final_kernel_size,
-                stride=1,
-                padding=final_kernel_size // 2,
-                padding_mode="replicate",
-                # output_padding=0,
-                bias=True,
-            ),
-            nn.BatchNorm2d(out_channels),
-            nn.Upsample(scale_factor=2, mode="bilinear"),
-            #nn.Sigmoid(),
+        # nn.Sequential(
+        #     nn.Conv2d(
+        #         dim_to_conv_tranpose,
+        #         dim_to_conv_tranpose,
+        #         kernel_size=final_kernel_size,
+        #         stride=1,
+        #         padding=final_kernel_size // 2,
+        #         padding_mode="replicate",
+        #         # output_padding=0,
+        #         bias=True,
+        #     ),
+        #     nn.BatchNorm2d(dim_to_conv_tranpose),
+        #     nn.Upsample(scale_factor=2, mode="bilinear"),
+        #     #nn.Sigmoid(),
+        # )
+
+        self.conv_transpose_3 = OrientedPowerMap(
+            device,
+            in_channels=dim_to_conv_tranpose,
+            kernel_size=final_kernel_size,
+            frequencies=None,
+            directions=7,
+            up_direction=False,
+            out_channels=dim_to_conv_tranpose,            
         )
+        self.conv_transpose_3.to(device)
+        
+        # nn.Sequential(
+        #     nn.Conv2d(
+        #         dim_to_conv_tranpose,
+        #         dim_to_conv_tranpose,                
+        #         kernel_size=final_kernel_size,
+        #         stride=1,
+        #         padding=final_kernel_size // 2,
+        #         padding_mode="replicate",
+        #         # output_padding=0,
+        #         bias=True,
+        #     ),
+        #     nn.BatchNorm2d(dim_to_conv_tranpose),
+        #     nn.Upsample(scale_factor=2, mode="bilinear"),
+        #     #nn.Sigmoid(),
+        # )
+
+        self.conv_transpose_4 = OrientedPowerMap(
+            device,
+            in_channels=dim_to_conv_tranpose,
+            kernel_size=final_kernel_size,
+            frequencies=None,
+            directions=7,
+            up_direction=False,
+            out_channels=out_channels,
+        )
+        self.conv_transpose_4.to(device)
+
+        # nn.Sequential(
+        #     nn.Conv2d(
+        #         dim_to_conv_tranpose,
+        #         out_channels,
+        #         kernel_size=final_kernel_size,
+        #         stride=1,
+        #         padding=final_kernel_size // 2,
+        #         padding_mode="replicate",
+        #         # output_padding=0,
+        #         bias=True,
+        #     ),
+        #     nn.BatchNorm2d(out_channels),
+        #     nn.Upsample(scale_factor=2, mode="bilinear"),
+        #     #nn.Sigmoid(),
+        # )
 
     def forward_dict(self, x):
         """_summary_
