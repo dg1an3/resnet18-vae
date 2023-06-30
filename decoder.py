@@ -48,10 +48,42 @@ class Decoder(nn.Module):
             ReverseBasicBlock(128, 128),
             ReverseBasicBlock(128, 128, stride=2),
             ReverseBasicBlock(128, 128),
-            ReverseBasicBlock(128, 64, stride=2),
-            ReverseBasicBlock(64, 64),
-            ReverseBasicBlock(64, 64, stride=2),
-            ReverseBasicBlock(64, dim_to_conv_tranpose),
+            OrientedPowerMap(
+                device,
+                in_channels=128,
+                out_channels=64,
+                kernel_size=7,
+                frequencies=None,
+                out_res="*2"
+            ),            
+            # ReverseBasicBlock(128, 64, stride=2),
+            OrientedPowerMap(
+                device,
+                in_channels=64,
+                out_channels=64,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ),
+            # ReverseBasicBlock(64, 64),
+            OrientedPowerMap(
+                device,
+                in_channels=64,
+                out_channels=64,
+                kernel_size=7,
+                frequencies=None,
+                out_res="*2"
+            ),            
+            # ReverseBasicBlock(64, 64, stride=2),
+            OrientedPowerMap(
+                device,
+                in_channels=64,
+                out_channels=dim_to_conv_tranpose,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ),
+            #ReverseBasicBlock(64, dim_to_conv_tranpose),
         )
 
         self.conv_transpose_1 = OrientedPowerMap(
@@ -60,80 +92,14 @@ class Decoder(nn.Module):
             kernel_size=final_kernel_size,
             frequencies=None,
             directions=7,
-            up_direction=False,
-            out_channels=dim_to_conv_tranpose,
+            out_res="*2",
+            out_channels=dim_to_conv_tranpose,            
         )
         self.conv_transpose_1.to(device)
 
-        # nn.Sequential(
-        #     nn.Conv2d(
-        #         dim_to_conv_tranpose,
-        #         dim_to_conv_tranpose,
-        #         kernel_size=final_kernel_size,
-        #         stride=1,
-        #         padding=final_kernel_size // 2,
-        #         padding_mode="replicate",
-        #         # output_padding=0,
-        #         bias=True,
-        #     ),
-        #     nn.BatchNorm2d(dim_to_conv_tranpose),
-        #     nn.Upsample(scale_factor=2, mode="bilinear"),
-        #     #nn.Sigmoid(),
-        # )
+        self.conv_transpose_2 = self.conv_transpose_1
 
-        self.conv_transpose_2 = OrientedPowerMap(
-            device,
-            in_channels=dim_to_conv_tranpose,
-            kernel_size=final_kernel_size,
-            frequencies=None,
-            directions=7,
-            up_direction=False,
-            out_channels=dim_to_conv_tranpose,            
-        )
-        self.conv_transpose_2.to(device)
-
-        # nn.Sequential(
-        #     nn.Conv2d(
-        #         dim_to_conv_tranpose,
-        #         dim_to_conv_tranpose,
-        #         kernel_size=final_kernel_size,
-        #         stride=1,
-        #         padding=final_kernel_size // 2,
-        #         padding_mode="replicate",
-        #         # output_padding=0,
-        #         bias=True,
-        #     ),
-        #     nn.BatchNorm2d(dim_to_conv_tranpose),
-        #     nn.Upsample(scale_factor=2, mode="bilinear"),
-        #     #nn.Sigmoid(),
-        # )
-
-        self.conv_transpose_3 = OrientedPowerMap(
-            device,
-            in_channels=dim_to_conv_tranpose,
-            kernel_size=final_kernel_size,
-            frequencies=None,
-            directions=7,
-            up_direction=False,
-            out_channels=dim_to_conv_tranpose,            
-        )
-        self.conv_transpose_3.to(device)
-        
-        # nn.Sequential(
-        #     nn.Conv2d(
-        #         dim_to_conv_tranpose,
-        #         dim_to_conv_tranpose,                
-        #         kernel_size=final_kernel_size,
-        #         stride=1,
-        #         padding=final_kernel_size // 2,
-        #         padding_mode="replicate",
-        #         # output_padding=0,
-        #         bias=True,
-        #     ),
-        #     nn.BatchNorm2d(dim_to_conv_tranpose),
-        #     nn.Upsample(scale_factor=2, mode="bilinear"),
-        #     #nn.Sigmoid(),
-        # )
+        self.conv_transpose_3 = self.conv_transpose_1
 
         self.conv_transpose_4 = OrientedPowerMap(
             device,
@@ -141,26 +107,10 @@ class Decoder(nn.Module):
             kernel_size=final_kernel_size,
             frequencies=None,
             directions=7,
-            up_direction=False,
+            out_res="*2",
             out_channels=out_channels,
         )
         self.conv_transpose_4.to(device)
-
-        # nn.Sequential(
-        #     nn.Conv2d(
-        #         dim_to_conv_tranpose,
-        #         out_channels,
-        #         kernel_size=final_kernel_size,
-        #         stride=1,
-        #         padding=final_kernel_size // 2,
-        #         padding_mode="replicate",
-        #         # output_padding=0,
-        #         bias=True,
-        #     ),
-        #     nn.BatchNorm2d(out_channels),
-        #     nn.Upsample(scale_factor=2, mode="bilinear"),
-        #     #nn.Sigmoid(),
-        # )
 
     def forward_dict(self, x):
         """_summary_

@@ -158,42 +158,53 @@ class Encoder(nn.Module):
             kernel_size=init_kernel_size,
             frequencies=None,
             directions=directions,
+            out_res="/2"
         )
         self.oriented_powermap_2.to(device)
 
-        self.oriented_powermap_3 = OrientedPowerMap(
-            device,
-            self.oriented_powermap_2.out_channels,
-            kernel_size=init_kernel_size,
-            frequencies=None,
-            directions=directions,
-        )
-        self.oriented_powermap_3.to(device)
-
-        self.oriented_powermap_4 = OrientedPowerMap(
-            device,
-            self.oriented_powermap_3.out_channels,
-            kernel_size=init_kernel_size,
-            frequencies=None,
-            directions=directions,
-        )
-        self.oriented_powermap_4.to(device)
+        self.oriented_powermap_3 = self.oriented_powermap_2
+        self.oriented_powermap_4 = self.oriented_powermap_2
 
         # self.freq_per_kernel = self.oriented_powermap.freq_per_kernel
         self.in_planes = self.oriented_powermap_3.out_channels
 
         self.residual_blocks = nn.Sequential(
-            # OrientedPowerMap(
-            #     device,
-            #     in_channels=self.in_planes,
-            #     out_channels=64,
-            #     kernel_size=7,
-            #     frequencies=None,
-            # ),
-            BasicBlock(self.in_planes, 64, stride=2),
-            BasicBlock(64, 64),
-            BasicBlock(64, 128, stride=2),
-            BasicBlock(128, 128),
+            OrientedPowerMap(
+                device,
+                in_channels=self.in_planes,
+                out_channels=64,
+                kernel_size=7,
+                frequencies=None,
+                out_res="/2"
+            ),
+            # BasicBlock(self.in_planes, 64, stride=2),
+            OrientedPowerMap(
+                device,
+                in_channels=64,
+                out_channels=64,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ),
+            # BasicBlock(64, 64),
+            OrientedPowerMap(
+                device,
+                in_channels=64,
+                out_channels=128,
+                kernel_size=7,
+                frequencies=None,
+                out_res="/2"
+            ),
+            # BasicBlock(64, 128, stride=2),
+            OrientedPowerMap(
+                device,
+                in_channels=128,
+                out_channels=128,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ),
+            # BasicBlock(128, 128),
             BasicBlock(128, 128, stride=2),
             BasicBlock(128, 128),
             BasicBlock(128, 128, stride=2),

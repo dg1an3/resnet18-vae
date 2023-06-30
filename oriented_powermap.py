@@ -33,8 +33,8 @@ class OrientedPowerMap(nn.Module):
         frequencies=None,
         directions=7,
         use_powermap=False,
-        out_res='None', # '/2' '*2'
-        up_direction=True,
+        out_res="/2",  # None '/2' '*2'
+        # up_direction=True,
         out_channels=None,
         kernels_and_freqs=None,
     ):
@@ -103,14 +103,20 @@ class OrientedPowerMap(nn.Module):
             kernel_size=1,
         )
 
+        match out_res:
+            case None:
+                change_res = nn.Identity()
+            case "/2":
+                change_res = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+            case "*2":
+                change_res = nn.Upsample(scale_factor=2, mode="bilinear")
+
         self.conv = nn.Sequential(
             conv_pre,
             conv_1,
             nn.BatchNorm2d(kernel_count),
             nn.ReLU(True),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-            if up_direction
-            else nn.Upsample(scale_factor=2, mode="bilinear"),
+            change_res,
             self.conv_2,
             nn.ReLU(True),
         )
@@ -121,9 +127,7 @@ class OrientedPowerMap(nn.Module):
                 out_channels=self.conv_2.out_channels,
                 kernel_size=1,
             ),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-            if up_direction
-            else nn.Upsample(scale_factor=2, mode="bilinear"),
+            change_res,
         )
 
         self.in_planes = kernel_count // 2
