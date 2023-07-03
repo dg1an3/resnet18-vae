@@ -124,7 +124,7 @@ def make_gabor_bank(
     for freq in freqs:
         freq_per_kernel.append(freq)
 
-        kernel = gauss(xs, ys, 2.0 / freq)
+        kernel = gauss(xs, ys, 1.5 / freq)
         kernels_complex.append(kernel)
 
         for n in range(directions):
@@ -180,7 +180,7 @@ def make_oriented_map(
     if frequencies is None:
         # populate with standard golden ratio frequencies
         phi = (5**0.5 + 1) / 2  # golden ratio
-        phi = 2.0
+        #phi = 2.0
         frequencies = [phi**n for n in range(2, -2, -1)]
 
     # construct the gabor bank (which is a complex-valued tensor)
