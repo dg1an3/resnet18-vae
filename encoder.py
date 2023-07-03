@@ -176,8 +176,7 @@ class Encoder(nn.Module):
                 kernel_size=7,
                 frequencies=None,
                 out_res="/2"
-            ),
-            # BasicBlock(self.in_planes, 64, stride=2),
+            ), # BasicBlock(self.in_planes, 64, stride=2),
             OrientedPowerMap(
                 device,
                 in_channels=64,
@@ -185,8 +184,8 @@ class Encoder(nn.Module):
                 kernel_size=7,
                 frequencies=None,
                 out_res=None
-            ),
-            # BasicBlock(64, 64),
+            ), # BasicBlock(64, 64),
+
             OrientedPowerMap(
                 device,
                 in_channels=64,
@@ -194,8 +193,7 @@ class Encoder(nn.Module):
                 kernel_size=7,
                 frequencies=None,
                 out_res="/2"
-            ),
-            # BasicBlock(64, 128, stride=2),
+            ), # BasicBlock(64, 128, stride=2),
             OrientedPowerMap(
                 device,
                 in_channels=128,
@@ -203,12 +201,52 @@ class Encoder(nn.Module):
                 kernel_size=7,
                 frequencies=None,
                 out_res=None
-            ),
+            ), # BasicBlock(128, 128),
+            OrientedPowerMap(
+                device,
+                in_channels=128,
+                out_channels=128,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ), # BasicBlock(128, 128),
+
+
+            OrientedPowerMap(
+                device,
+                in_channels=128,
+                out_channels=256,
+                kernel_size=7,
+                frequencies=None,
+                out_res="/2"
+            ), # BasicBlock(128, 128, stride=2),
+            OrientedPowerMap(
+                device,
+                in_channels=256,
+                out_channels=256,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ), # BasicBlock(128, 128),
+            OrientedPowerMap(
+                device,
+                in_channels=256,
+                out_channels=256,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ), # BasicBlock(128, 128),
+            OrientedPowerMap(
+                device,
+                in_channels=256,
+                out_channels=256,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ), # BasicBlock(128, 128),
+
+            # BasicBlock(128, 128, stride=2),
             # BasicBlock(128, 128),
-            BasicBlock(128, 128, stride=2),
-            BasicBlock(128, 128),
-            BasicBlock(128, 128, stride=2),
-            BasicBlock(128, 128),
         )
         self.residual_blocks.to(device)
 
@@ -219,7 +257,7 @@ class Encoder(nn.Module):
         v1_output = self.oriented_powermap(test_input)
         v1_output = self.oriented_powermap_2(v1_output)
         v1_output = self.oriented_powermap_3(v1_output)
-        v1_output = self.oriented_powermap_4(v1_output)
+        # v1_output = self.oriented_powermap_4(v1_output)
 
         output = self.residual_blocks(v1_output)
         self.input_size_to_fc = output.size()
@@ -240,9 +278,9 @@ class Encoder(nn.Module):
         x_v1 = self.oriented_powermap(x)
         x_v2 = self.oriented_powermap_2(x_v1)
         x_v4 = self.oriented_powermap_3(x_v2)
-        x_v4_2 = self.oriented_powermap_4(x_v4)
+        # x_v4_2 = self.oriented_powermap_4(x_v4)
 
-        x = self.residual_blocks(x_v4_2)
+        x = self.residual_blocks(x_v4)
         x = x.view(x.size(0), -1)
         mu = self.fc_mu(x)
         log_var = self.fc_log_var(x)

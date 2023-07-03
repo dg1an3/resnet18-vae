@@ -44,19 +44,50 @@ class Decoder(nn.Module):
         self.fc = nn.Linear(latent_dim, size_from_fc.numel())
 
         self.residual_blocks = nn.Sequential(
-            ReverseBasicBlock(128, 128, stride=2),
-            ReverseBasicBlock(128, 128),
-            ReverseBasicBlock(128, 128, stride=2),
-            ReverseBasicBlock(128, 128),
+            # ReverseBasicBlock(128, 128, stride=2),
+            # ReverseBasicBlock(128, 128),
+            OrientedPowerMap(
+                device,
+                in_channels=256,
+                out_channels=256,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ), # ReverseBasicBlock(128, 128, stride=2),
+            OrientedPowerMap(
+                device,
+                in_channels=256,
+                out_channels=256,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ), # ReverseBasicBlock(128, 128),
+            OrientedPowerMap(
+                device,
+                in_channels=256,
+                out_channels=256,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ), # ReverseBasicBlock(128, 128),
+            OrientedPowerMap(
+                device,
+                in_channels=256,
+                out_channels=128,
+                kernel_size=7,
+                frequencies=None,
+                out_res="*2" # None
+            ), # ReverseBasicBlock(128, 128),
+
+
             OrientedPowerMap(
                 device,
                 in_channels=128,
                 out_channels=64,
                 kernel_size=7,
                 frequencies=None,
-                out_res="*2"
-            ),            
-            # ReverseBasicBlock(128, 64, stride=2),
+                out_res=None #  "*2"
+            ), # ReverseBasicBlock(128, 64, stride=2),
             OrientedPowerMap(
                 device,
                 in_channels=64,
@@ -64,8 +95,7 @@ class Decoder(nn.Module):
                 kernel_size=7,
                 frequencies=None,
                 out_res=None
-            ),
-            # ReverseBasicBlock(64, 64),
+            ), # ReverseBasicBlock(64, 64),
             OrientedPowerMap(
                 device,
                 in_channels=64,
@@ -73,17 +103,24 @@ class Decoder(nn.Module):
                 kernel_size=7,
                 frequencies=None,
                 out_res="*2"
-            ),            
-            # ReverseBasicBlock(64, 64, stride=2),
+            ), # ReverseBasicBlock(64, 64),
+
+            OrientedPowerMap(
+                device,
+                in_channels=64,
+                out_channels=64,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ), # ReverseBasicBlock(64, 64, stride=2),
             OrientedPowerMap(
                 device,
                 in_channels=64,
                 out_channels=dim_to_conv_tranpose,
                 kernel_size=7,
                 frequencies=None,
-                out_res=None
-            ),
-            #ReverseBasicBlock(64, dim_to_conv_tranpose),
+                out_res="*2"
+            ), #ReverseBasicBlock(64, dim_to_conv_tranpose),
         )
 
         self.conv_transpose_1 = OrientedPowerMap(
@@ -128,9 +165,9 @@ class Decoder(nn.Module):
             self.size_from_fc[-2],
             self.size_from_fc[-1],
         )
-        x_v4_2_back = self.residual_blocks(x)
+        x_v4_back = self.residual_blocks(x)
 
-        x_v4_back = self.conv_transpose_1(x_v4_2_back)
+        # x_v4_back = self.conv_transpose_1(x_v4_2_back)
         x_v2_back = self.conv_transpose_2(x_v4_back)
         x_v1_back = self.conv_transpose_3(x_v2_back)
         x_back = self.conv_transpose_4(x_v1_back)

@@ -253,13 +253,14 @@ class VAE(nn.Module):
         )
 
         train_non_stn = True
-        for name, param in self.encoder.named_parameters():
-            print(f"setting requires grad for {name} to {train_non_stn}")
-            param.requires_grad = train_non_stn
+        ##for name, param in self.encoder.named_parameters():
+            #if "oriented_powermap"
+           # print(f"setting requires grad for {name} to {train_non_stn}")
+            #param.requires_grad = train_non_stn
 
-        for name, param in self.decoder.named_parameters():
-            print(f"setting requires grad for {name} to {train_non_stn}")
-            param.requires_grad = train_non_stn
+        #for name, param in self.decoder.named_parameters():
+            #print(f"setting requires grad for {name} to {train_non_stn}")
+            #param.requires_grad = train_non_stn
 
     def stn(self, x):
         logging.debug(f"x.shape = {x.shape}")
@@ -348,7 +349,7 @@ class VAE(nn.Module):
         z = reparameterize(result_encoder["mu"], result_encoder["log_var"])
 
         # clamp a subset of latent dimensions
-        init_dims = 29
+        init_dims = 68
         z = torch.clamp(
             z,
             torch.tensor(
@@ -481,7 +482,7 @@ def train_vae(device, train_stn=False, train_non_stn=True, l1_weight=0.9):
 
     train_dataset = Cxr8Dataset(
         root_path,
-        sz=512,
+        sz=256,
         transform=transforms.Compose(
             [
                 transforms.ToTensor(),
@@ -492,7 +493,7 @@ def train_vae(device, train_stn=False, train_non_stn=True, l1_weight=0.9):
     input_size = train_dataset[0]["image"].shape
     logging.info(f"input_size = {input_size}")
 
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     logging.info(f"train_dataset length = {len(train_dataset)}")
 
     model, optimizer, start_epoch = load_model(
@@ -521,7 +522,7 @@ def train_vae(device, train_stn=False, train_non_stn=True, l1_weight=0.9):
         optimizer.zero_grad()
 
         result_dict = model.forward_dict(x)
-        # result_dict["x_v1"] = None
+        result_dict["x_v1"] = None
         result_dict["x_v2"] = None
         result_dict["x_v4"] = None
         # result_dict = clamp_01(result_dict)
@@ -653,14 +654,14 @@ if "__main__" == __name__:
     logging.info(f"torch operations on {device} device")
 
     if args.train:
-        train_vae(device, train_stn=True, train_non_stn=True, l1_weight=0.9)
+        train_vae(device, train_stn=True, train_non_stn=True, l1_weight=0.7)
         for _ in range(3):
-            for l1_weight in [0.1, 0.9]:
+            for l1_weight in [0.9]:
                 for train_stn in [False, True]:
                     train_vae(
                         device,
                         train_stn=train_stn,
-                        train_non_stn=not (train_stn),
+                        train_non_stn=True, #not (train_stn),
                         l1_weight=l1_weight,
                     )
 
