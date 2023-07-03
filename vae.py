@@ -202,12 +202,12 @@ class VAE(nn.Module):
         stn_oriented_phasemap_1 = self.encoder.oriented_powermap
         stn_oriented_phasemap_2 = self.encoder.oriented_powermap_2
         stn_oriented_phasemap_3 = self.encoder.oriented_powermap_3
-        stn_oriented_phasemap_4 = self.encoder.oriented_powermap_4
+        #stn_oriented_phasemap_4 = self.encoder.oriented_powermap_4
         self.localization = nn.Sequential(
             stn_oriented_phasemap_1,
             stn_oriented_phasemap_2,
             stn_oriented_phasemap_3,
-            stn_oriented_phasemap_4,
+            #stn_oriented_phasemap_4,
         )
 
         # for name, param in self.localization.named_parameters():
