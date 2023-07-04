@@ -108,13 +108,14 @@ class OrientedPowerMap(nn.Module):
                 change_res = nn.Identity()
             case "/2":
                 change_res = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+                # change_res = nn.AvgPool2d(kernel_size=3, stride=2, padding=1)
             case "*2":
                 change_res = nn.Upsample(scale_factor=2, mode="bilinear")
 
         self.conv = nn.Sequential(
             conv_pre,
             conv_1,
-            nn.BatchNorm2d(kernel_count),
+            # nn.BatchNorm2d(kernel_count),
             nn.ReLU(True),
             change_res,
             self.conv_2,
@@ -143,7 +144,7 @@ class OrientedPowerMap(nn.Module):
             _type_: _description_
         """
         shortcut_x = self.shortcut(x)
-        x = self.conv(x) + shortcut_x
+        x = 0.5 * (self.conv(x) + shortcut_x)
         return x
 
 

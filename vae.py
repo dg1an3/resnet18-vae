@@ -174,7 +174,7 @@ class VAE(nn.Module):
         init_kernel_size=13,
         latent_dim=32,
         train_stn=False,
-        train_non_stn=True,
+        train_non_stn=True,   # TODO: remove non_stn training (should implement pre-shifter instead)
     ):
         """construct a resnet 34 VAE module
 
@@ -224,7 +224,7 @@ class VAE(nn.Module):
 
         self.fc_xform = nn.Sequential(
             nn.Linear(self.localization_out_numel, 32),
-            nn.BatchNorm1d(32),
+            #nn.BatchNorm1d(32),
             nn.ReLU(True),
             nn.Linear(32, 6),
         )
@@ -274,12 +274,12 @@ class VAE(nn.Module):
 
         eps = 0.0
 
-        shear_factor = 0.5
+        shear_factor = 0.005
         shear = shear_factor * fc_xform_out[:, 5]
         shear = shear.view(-1, 1)
         shear = torch.clamp(shear, -eps, eps)
 
-        scale_factor = 0.5
+        scale_factor = 0.005
         scale_x, scale_y = (
             torch.sigmoid(scale_factor * fc_xform_out[:, 3]) * 2.0,
             torch.sigmoid(scale_factor * fc_xform_out[:, 4]) * 2.0,
@@ -290,13 +290,13 @@ class VAE(nn.Module):
         angle = fc_xform_out[:, 2]
         # angle = torch.clamp(angle, -eps, eps)
 
-        angle_factor = 0.25
+        angle_factor = 0.005
         sa = torch.sin(angle_factor * angle).view(-1, 1)
         ca = torch.cos(angle_factor * angle).view(-1, 1)
         # print(f"ca = {ca}")
         # print(f"sa = {sa}")
 
-        xlate_factor = 0.5
+        xlate_factor = 0.005
         x_shift = xlate_factor * fc_xform_out[:, 0]
         x_shift = x_shift.view(-1, 1)
         # x_shift = torch.clamp(x_shift, -eps, eps)
@@ -349,6 +349,7 @@ class VAE(nn.Module):
         z = reparameterize(result_encoder["mu"], result_encoder["log_var"])
 
         # clamp a subset of latent dimensions
+        # TODO: make this a settable attribute
         init_dims = 68
         z = torch.clamp(
             z,
@@ -403,7 +404,7 @@ class VAE(nn.Module):
 def load_model(
     input_size,
     device,
-    kernel_size=11,
+    kernel_size=11,   # TODO: ensure these are all hooked up
     directions=5,
     latent_dim=96,
     train_stn=False,
@@ -522,7 +523,7 @@ def train_vae(device, train_stn=False, train_non_stn=True, l1_weight=0.9):
         optimizer.zero_grad()
 
         result_dict = model.forward_dict(x)
-        result_dict["x_v1"] = None
+        #result_dict["x_v1"] = None
         result_dict["x_v2"] = None
         result_dict["x_v4"] = None
         # result_dict = clamp_01(result_dict)
@@ -654,7 +655,7 @@ if "__main__" == __name__:
     logging.info(f"torch operations on {device} device")
 
     if args.train:
-        train_vae(device, train_stn=True, train_non_stn=True, l1_weight=0.7)
+        #train_vae(device, train_stn=True, train_non_stn=True, l1_weight=0.7)
         for _ in range(3):
             for l1_weight in [0.9]:
                 for train_stn in [False, True]:

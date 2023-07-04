@@ -44,8 +44,15 @@ class Decoder(nn.Module):
         self.fc = nn.Linear(latent_dim, size_from_fc.numel())
 
         self.residual_blocks = nn.Sequential(
-            # ReverseBasicBlock(128, 128, stride=2),
-            # ReverseBasicBlock(128, 128),
+            # 256x256
+            OrientedPowerMap(
+                device,
+                in_channels=256,
+                out_channels=256,
+                kernel_size=7,
+                frequencies=None,
+                out_res="*2"  # TODO: move this to before OPM
+            ),
             OrientedPowerMap(
                 device,
                 in_channels=256,
@@ -53,7 +60,7 @@ class Decoder(nn.Module):
                 kernel_size=7,
                 frequencies=None,
                 out_res=None
-            ), # ReverseBasicBlock(128, 128, stride=2),
+            ),
             OrientedPowerMap(
                 device,
                 in_channels=256,
@@ -61,73 +68,67 @@ class Decoder(nn.Module):
                 kernel_size=7,
                 frequencies=None,
                 out_res=None
-            ), # ReverseBasicBlock(128, 128),
-            OrientedPowerMap(
-                device,
-                in_channels=256,
-                out_channels=256,
-                kernel_size=7,
-                frequencies=None,
-                out_res="*2"
-            ), # ReverseBasicBlock(128, 128),
+            ),
 
+            # 128x128
             OrientedPowerMap(
                 device,
                 in_channels=256,
-                out_channels=128,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None #  "*2"
-            ), # ReverseBasicBlock(128, 64, stride=2),
-             OrientedPowerMap(
-                device,
-                in_channels=128,
-                out_channels=128,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None #  "*2"
-            ), # ReverseBasicBlock(128, 64, stride=2),
-             OrientedPowerMap(
-                device,
-                in_channels=128,
-                out_channels=128,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None #  "*2"
-            ), # ReverseBasicBlock(128, 64, stride=2),
-             OrientedPowerMap(
-                device,
-                in_channels=128,
-                out_channels=128,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None #  "*2"
-            ), # ReverseBasicBlock(128, 64, stride=2),
-            OrientedPowerMap(
-                device,
-                in_channels=128,
-                out_channels=128,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None
-            ), # ReverseBasicBlock(64, 64),
-            OrientedPowerMap(
-                device,
-                in_channels=128,
                 out_channels=128,
                 kernel_size=7,
                 frequencies=None,
                 out_res="*2"
-            ), # ReverseBasicBlock(64, 64),
+            ),
+             OrientedPowerMap(
+                device,
+                in_channels=128,
+                out_channels=128,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ),
+             OrientedPowerMap(
+                device,
+                in_channels=128,
+                out_channels=128,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ),
+             OrientedPowerMap(
+                device,
+                in_channels=128,
+                out_channels=128,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ),
+            OrientedPowerMap(
+                device,
+                in_channels=128,
+                out_channels=128,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ),
+            OrientedPowerMap(
+                device,
+                in_channels=128,
+                out_channels=128,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None
+            ),
 
+            # 64x64
             OrientedPowerMap(
                 device,
                 in_channels=128,
                 out_channels=64,
                 kernel_size=7,
                 frequencies=None,
-                out_res=None
-            ), # ReverseBasicBlock(64, 64, stride=2),
+                out_res="*2"
+            ),
             OrientedPowerMap(
                 device,
                 in_channels=64,
@@ -135,7 +136,7 @@ class Decoder(nn.Module):
                 kernel_size=7,
                 frequencies=None,
                 out_res=None
-            ), # ReverseBasicBlock(64, 64, stride=2),
+            ),
             OrientedPowerMap(
                 device,
                 in_channels=64,
@@ -143,15 +144,15 @@ class Decoder(nn.Module):
                 kernel_size=7,
                 frequencies=None,
                 out_res=None
-            ), # ReverseBasicBlock(64, 64, stride=2),
+            ),
             OrientedPowerMap(
                 device,
                 in_channels=64,
                 out_channels=dim_to_conv_tranpose,
                 kernel_size=7,
                 frequencies=None,
-                out_res="*2"
-            ), #ReverseBasicBlock(64, dim_to_conv_tranpose),
+                out_res=None
+            ),
         )
 
         self.conv_transpose_1 = OrientedPowerMap(
