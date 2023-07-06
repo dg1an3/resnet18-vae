@@ -107,8 +107,8 @@ class OrientedPowerMap(nn.Module):
             case None:
                 change_res = nn.Identity()
             case "/2":
-                change_res = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-                # change_res = nn.AvgPool2d(kernel_size=3, stride=2, padding=1)
+                # change_res = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+                change_res = nn.AvgPool2d(kernel_size=3, stride=2, padding=1)
             case "*2":
                 change_res = nn.Upsample(scale_factor=2, mode="bilinear")
 
