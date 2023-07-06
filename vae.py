@@ -109,6 +109,7 @@ def vae_loss(
     x_v4_back = clamp_01(x_v4_back)
     recon_loss = 0.0
     for loss_func, weight in recon_loss_metrics:
+        if weight < 1e-6: continue
         # for value, value_back in [(x, x_back)]:
         recon_loss += loss_func(x, x_back, reduction="mean") * weight
 
@@ -174,7 +175,6 @@ class VAE(nn.Module):
         init_kernel_size=13,
         latent_dim=32,
         train_stn=False,
-        train_non_stn=True,   # TODO: remove non_stn training (should implement pre-shifter instead)
     ):
         """construct a resnet 34 VAE module
 
@@ -202,12 +202,12 @@ class VAE(nn.Module):
         stn_oriented_phasemap_1 = self.encoder.oriented_powermap
         stn_oriented_phasemap_2 = self.encoder.oriented_powermap_2
         stn_oriented_phasemap_3 = self.encoder.oriented_powermap_3
-        #stn_oriented_phasemap_4 = self.encoder.oriented_powermap_4
+        # stn_oriented_phasemap_4 = self.encoder.oriented_powermap_4
         self.localization = nn.Sequential(
             stn_oriented_phasemap_1,
             stn_oriented_phasemap_2,
             stn_oriented_phasemap_3,
-            #stn_oriented_phasemap_4,
+            # stn_oriented_phasemap_4,
         )
 
         # for name, param in self.localization.named_parameters():
@@ -224,15 +224,19 @@ class VAE(nn.Module):
 
         self.fc_xform = nn.Sequential(
             nn.Linear(self.localization_out_numel, 32),
-            #nn.BatchNorm1d(32),
+            # nn.BatchNorm1d(32),
+            nn.ReLU(True),
+            nn.Linear(32, 32),
             nn.ReLU(True),
             nn.Linear(32, 6),
         )
 
         # initialize to zero weights and biases
-        eps = 1e-2
+        eps = 1e-3
         torch.nn.init.normal_(self.fc_xform[0].weight, 0.0, eps)
         torch.nn.init.normal_(self.fc_xform[0].bias, 0.0, eps)
+        torch.nn.init.normal_(self.fc_xform[2].weight, 0.0, eps)
+        torch.nn.init.normal_(self.fc_xform[2].bias, 0.0, eps)
         torch.nn.init.normal_(self.fc_xform[-1].weight, 0.0, eps)
         torch.nn.init.normal_(self.fc_xform[-1].bias, 0.0, eps)
 
@@ -252,16 +256,6 @@ class VAE(nn.Module):
             dim_to_conv_tranpose=dim_to_conv_tranpose,
         )
 
-        train_non_stn = True
-        ##for name, param in self.encoder.named_parameters():
-            #if "oriented_powermap"
-           # print(f"setting requires grad for {name} to {train_non_stn}")
-            #param.requires_grad = train_non_stn
-
-        #for name, param in self.decoder.named_parameters():
-            #print(f"setting requires grad for {name} to {train_non_stn}")
-            #param.requires_grad = train_non_stn
-
     def stn(self, x):
         logging.debug(f"x.shape = {x.shape}")
         xs = self.localization(x)
@@ -274,15 +268,15 @@ class VAE(nn.Module):
 
         eps = 0.0
 
-        shear_factor = 0.005
+        shear_factor = 1e-4
         shear = shear_factor * fc_xform_out[:, 5]
         shear = shear.view(-1, 1)
-        shear = torch.clamp(shear, -eps, eps)
+        # shear = torch.clamp(shear, -eps, eps)
 
-        scale_factor = 0.005
+        scale_factor = 1e-4
         scale_x, scale_y = (
-            torch.sigmoid(scale_factor * fc_xform_out[:, 3]) * 2.0,
-            torch.sigmoid(scale_factor * fc_xform_out[:, 4]) * 2.0,
+            torch.sigmoid(scale_factor * fc_xform_out[:, 3]) + 0.6,
+            torch.sigmoid(scale_factor * fc_xform_out[:, 4]) + 0.6,
         )
         scale_x = scale_x.view(-1, 1)
         scale_y = scale_y.view(-1, 1)
@@ -290,13 +284,13 @@ class VAE(nn.Module):
         angle = fc_xform_out[:, 2]
         # angle = torch.clamp(angle, -eps, eps)
 
-        angle_factor = 0.005
+        angle_factor = 1e-4
         sa = torch.sin(angle_factor * angle).view(-1, 1)
         ca = torch.cos(angle_factor * angle).view(-1, 1)
         # print(f"ca = {ca}")
         # print(f"sa = {sa}")
 
-        xlate_factor = 0.005
+        xlate_factor = 1e-4
         x_shift = xlate_factor * fc_xform_out[:, 0]
         x_shift = x_shift.view(-1, 1)
         # x_shift = torch.clamp(x_shift, -eps, eps)
@@ -404,11 +398,10 @@ class VAE(nn.Module):
 def load_model(
     input_size,
     device,
-    kernel_size=11,   # TODO: ensure these are all hooked up
+    kernel_size=11,  # TODO: ensure these are all hooked up
     directions=5,
     latent_dim=96,
     train_stn=False,
-    train_non_stn=True,
 ):
     """_summary_
 
@@ -432,11 +425,11 @@ def load_model(
         # directions=directions,
         latent_dim=latent_dim,
         train_stn=train_stn,  # len(epoch_files) >= 0,
-        train_non_stn=train_non_stn,
     )
     model = model.to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    # optimizer = optim.SGD(model.parameters(), lr=1e-1)
     if len(epoch_files) > 0:
         dct = torch.load(epoch_files[-1], map_location=device)
         start_epoch = dct["epoch"]
@@ -471,7 +464,7 @@ def load_model(
 ###########################################
 
 
-def train_vae(device, train_stn=False, train_non_stn=True, l1_weight=0.9):
+def train_vae(device, train_stn=False, l1_weight=0.9):
     """perform training of the vae model
 
     Args:
@@ -504,7 +497,6 @@ def train_vae(device, train_stn=False, train_non_stn=True, l1_weight=0.9):
         directions=7,
         latent_dim=96,
         train_stn=train_stn,
-        train_non_stn=train_non_stn,
     )
     logging.info(set([p.device for p in model.parameters()]))
 
@@ -523,9 +515,9 @@ def train_vae(device, train_stn=False, train_non_stn=True, l1_weight=0.9):
         optimizer.zero_grad()
 
         result_dict = model.forward_dict(x)
-        #result_dict["x_v1"] = None
-        result_dict["x_v2"] = None
-        result_dict["x_v4"] = None
+        # result_dict["x_v1"] = None
+        # result_dict["x_v2"] = None
+        # result_dict["x_v4"] = None
         # result_dict = clamp_01(result_dict)
 
         recon_loss, kldiv_loss, loss = vae_loss(
@@ -533,7 +525,7 @@ def train_vae(device, train_stn=False, train_non_stn=True, l1_weight=0.9):
                 (F.l1_loss, l1_weight),
                 (F.binary_cross_entropy, (1.0 - l1_weight)),
             ),
-            beta=0.1,
+            beta=1e-2,
             x=x,
             **result_dict,
         )
@@ -655,14 +647,13 @@ if "__main__" == __name__:
     logging.info(f"torch operations on {device} device")
 
     if args.train:
-        #train_vae(device, train_stn=True, train_non_stn=True, l1_weight=0.7)
+        # train_vae(device, train_stn=True, train_non_stn=True, l1_weight=0.7)
         for _ in range(3):
-            for l1_weight in [0.9]:
-                for train_stn in [False, True]:
+            for l1_weight in [1.0]: # 0.7, 0.9]:
+                for train_stn in [True, False]:
                     train_vae(
                         device,
                         train_stn=train_stn,
-                        train_non_stn=True, #not (train_stn),
                         l1_weight=l1_weight,
                     )
 
