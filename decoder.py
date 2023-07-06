@@ -22,7 +22,7 @@ class Decoder(nn.Module):
 
     def __init__(
         self,
-        device,        
+        device,
         size_from_fc: torch.Size,
         latent_dim=32,
         out_channels=3,
@@ -43,33 +43,42 @@ class Decoder(nn.Module):
         self.size_from_fc = size_from_fc
         self.fc = nn.Linear(latent_dim, size_from_fc.numel())
 
+        self.first_upsample = nn.Upsample(scale_factor=2, mode="bilinear")
+        self.first_residual = OrientedPowerMap(
+            device,
+            in_channels=256,
+            out_channels=256,
+            kernel_size=7,
+            frequencies=None,
+            out_res=None,  # TODO: move this to before OPM
+        )
+
         self.residual_blocks = nn.Sequential(
             # 256x256
-            OrientedPowerMap(
-                device,
-                in_channels=256,
-                out_channels=256,
-                kernel_size=7,
-                frequencies=None,
-                out_res="*2"  # TODO: move this to before OPM
-            ),
-            OrientedPowerMap(
-                device,
-                in_channels=256,
-                out_channels=256,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None
-            ),
-            OrientedPowerMap(
-                device,
-                in_channels=256,
-                out_channels=256,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None
-            ),
-
+            # OrientedPowerMap(
+            #     device,
+            #     in_channels=256,
+            #     out_channels=256,
+            #     kernel_size=7,
+            #     frequencies=None,
+            #     out_res="*2",  # TODO: move this to before OPM
+            # ),
+            # OrientedPowerMap(
+            #     device,
+            #     in_channels=256,
+            #     out_channels=256,
+            #     kernel_size=7,
+            #     frequencies=None,
+            #     out_res=None,
+            # ),
+            # OrientedPowerMap(
+            #     device,
+            #     in_channels=256,
+            #     out_channels=256,
+            #     kernel_size=7,
+            #     frequencies=None,
+            #     out_res=None,
+            # ),
             # 128x128
             OrientedPowerMap(
                 device,
@@ -77,31 +86,7 @@ class Decoder(nn.Module):
                 out_channels=128,
                 kernel_size=7,
                 frequencies=None,
-                out_res="*2"
-            ),
-             OrientedPowerMap(
-                device,
-                in_channels=128,
-                out_channels=128,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None
-            ),
-             OrientedPowerMap(
-                device,
-                in_channels=128,
-                out_channels=128,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None
-            ),
-             OrientedPowerMap(
-                device,
-                in_channels=128,
-                out_channels=128,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None
+                out_res="*2",
             ),
             OrientedPowerMap(
                 device,
@@ -109,7 +94,7 @@ class Decoder(nn.Module):
                 out_channels=128,
                 kernel_size=7,
                 frequencies=None,
-                out_res=None
+                out_res=None,
             ),
             OrientedPowerMap(
                 device,
@@ -117,9 +102,32 @@ class Decoder(nn.Module):
                 out_channels=128,
                 kernel_size=7,
                 frequencies=None,
-                out_res=None
+                out_res=None,
             ),
-
+            OrientedPowerMap(
+                device,
+                in_channels=128,
+                out_channels=128,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None,
+            ),
+            OrientedPowerMap(
+                device,
+                in_channels=128,
+                out_channels=128,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None,
+            ),
+            OrientedPowerMap(
+                device,
+                in_channels=128,
+                out_channels=128,
+                kernel_size=7,
+                frequencies=None,
+                out_res=None,
+            ),
             # 64x64
             OrientedPowerMap(
                 device,
@@ -127,7 +135,7 @@ class Decoder(nn.Module):
                 out_channels=64,
                 kernel_size=7,
                 frequencies=None,
-                out_res="*2"
+                out_res="*2",
             ),
             OrientedPowerMap(
                 device,
@@ -135,7 +143,7 @@ class Decoder(nn.Module):
                 out_channels=64,
                 kernel_size=7,
                 frequencies=None,
-                out_res=None
+                out_res=None,
             ),
             OrientedPowerMap(
                 device,
@@ -143,7 +151,7 @@ class Decoder(nn.Module):
                 out_channels=64,
                 kernel_size=7,
                 frequencies=None,
-                out_res=None
+                out_res=None,
             ),
             OrientedPowerMap(
                 device,
@@ -151,7 +159,7 @@ class Decoder(nn.Module):
                 out_channels=dim_to_conv_tranpose,
                 kernel_size=7,
                 frequencies=None,
-                out_res=None
+                out_res=None,
             ),
         )
 
@@ -162,7 +170,7 @@ class Decoder(nn.Module):
             frequencies=None,
             directions=7,
             out_res="*2",
-            out_channels=dim_to_conv_tranpose,            
+            out_channels=dim_to_conv_tranpose,
         )
         self.conv_transpose_1.to(device)
 
@@ -197,6 +205,13 @@ class Decoder(nn.Module):
             self.size_from_fc[-2],
             self.size_from_fc[-1],
         )
+
+        # perform first residual layer
+        # TODO: move this to OrientedPowermap
+        x = self.first_upsample(x)
+        for _ in range(3):
+            x = self.first_residual(x)
+
         x_v4_back = self.residual_blocks(x)
 
         # x_v4_back = self.conv_transpose_1(x_v4_2_back)
