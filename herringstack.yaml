@@ -1,0 +1,27 @@
+Model:
+  Name: HerringStack
+  Layers:
+    v1: 
+      type: HerringStackLayer
+    v2:
+    v4:
+    stn:
+    pit:
+    cit:
+    ait:
+    top:
+Preprocess:
+  Data: CXR8Dataset
+  Size: 256x256
+  Filter: CLAHE
+Train:
+  Optimizer: Adam
+  Epochs:
+    1:
+      l1_loss: 0.9
+      train_stn: True
+    2:
+      l1_loss: 0.5
+      train_stn: False
+Infer:
+  Data: CXR8Dataset
