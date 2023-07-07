@@ -232,7 +232,7 @@ class VAE(nn.Module):
         )
 
         # initialize to zero weights and biases
-        eps = 1e-3
+        eps = 1e-2
         torch.nn.init.normal_(self.fc_xform[0].weight, 0.0, eps)
         torch.nn.init.normal_(self.fc_xform[0].bias, 0.0, eps)
         torch.nn.init.normal_(self.fc_xform[2].weight, 0.0, eps)
@@ -515,9 +515,9 @@ def train_vae(device, train_stn=False, l1_weight=0.9):
         optimizer.zero_grad()
 
         result_dict = model.forward_dict(x)
-        # result_dict["x_v1"] = None
-        # result_dict["x_v2"] = None
-        # result_dict["x_v4"] = None
+        result_dict["x_v1"] = None
+        result_dict["x_v2"] = None
+        result_dict["x_v4"] = None
         # result_dict = clamp_01(result_dict)
 
         recon_loss, kldiv_loss, loss = vae_loss(
@@ -525,7 +525,7 @@ def train_vae(device, train_stn=False, l1_weight=0.9):
                 (F.l1_loss, l1_weight),
                 (F.binary_cross_entropy, (1.0 - l1_weight)),
             ),
-            beta=1e-2,
+            beta=1e-3,
             x=x,
             **result_dict,
         )
@@ -649,7 +649,7 @@ if "__main__" == __name__:
     if args.train:
         # train_vae(device, train_stn=True, train_non_stn=True, l1_weight=0.7)
         for _ in range(3):
-            for l1_weight in [1.0]: # 0.7, 0.9]:
+            for l1_weight in [0.7, 0.9]: # 0.7, 0.9]:
                 for train_stn in [True, False]:
                     train_vae(
                         device,

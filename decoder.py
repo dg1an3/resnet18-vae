@@ -52,6 +52,18 @@ class Decoder(nn.Module):
             frequencies=None,
             out_res=None,  # TODO: move this to before OPM
         )
+        self.first_conv1 = nn.Conv2d(kernel_size=1, in_channels=256, out_channels=128)
+
+        self.second_upsample = nn.Upsample(scale_factor=2, mode="bilinear")
+        self.second_residual = OrientedPowerMap(
+            device,
+            in_channels=128,
+            out_channels=128,
+            kernel_size=7,
+            frequencies=None,
+            out_res=None,  # TODO: move this to before OPM
+        )
+        self.second_conv1 = nn.Conv2d(kernel_size=1, in_channels=128, out_channels=64)
 
         self.residual_blocks = nn.Sequential(
             # 256x256
@@ -80,58 +92,58 @@ class Decoder(nn.Module):
             #     out_res=None,
             # ),
             # 128x128
-            OrientedPowerMap(
-                device,
-                in_channels=256,
-                out_channels=128,
-                kernel_size=7,
-                frequencies=None,
-                out_res="*2",
-            ),
-            OrientedPowerMap(
-                device,
-                in_channels=128,
-                out_channels=128,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None,
-            ),
-            OrientedPowerMap(
-                device,
-                in_channels=128,
-                out_channels=128,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None,
-            ),
-            OrientedPowerMap(
-                device,
-                in_channels=128,
-                out_channels=128,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None,
-            ),
-            OrientedPowerMap(
-                device,
-                in_channels=128,
-                out_channels=128,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None,
-            ),
-            OrientedPowerMap(
-                device,
-                in_channels=128,
-                out_channels=128,
-                kernel_size=7,
-                frequencies=None,
-                out_res=None,
-            ),
+            # OrientedPowerMap(
+            #     device,
+            #     in_channels=256,
+            #     out_channels=128,
+            #     kernel_size=7,
+            #     frequencies=None,
+            #     out_res="*2",
+            # ),
+            # OrientedPowerMap(
+            #     device,
+            #     in_channels=128,
+            #     out_channels=128,
+            #     kernel_size=7,
+            #     frequencies=None,
+            #     out_res=None,
+            # ),
+            # OrientedPowerMap(
+            #     device,
+            #     in_channels=128,
+            #     out_channels=128,
+            #     kernel_size=7,
+            #     frequencies=None,
+            #     out_res=None,
+            # ),
+            # OrientedPowerMap(
+            #     device,
+            #     in_channels=128,
+            #     out_channels=128,
+            #     kernel_size=7,
+            #     frequencies=None,
+            #     out_res=None,
+            # ),
+            # OrientedPowerMap(
+            #     device,
+            #     in_channels=128,
+            #     out_channels=128,
+            #     kernel_size=7,
+            #     frequencies=None,
+            #     out_res=None,
+            # ),
+            # OrientedPowerMap(
+            #     device,
+            #     in_channels=128,
+            #     out_channels=128,
+            #     kernel_size=7,
+            #     frequencies=None,
+            #     out_res=None,
+            # ),
             # 64x64
             OrientedPowerMap(
                 device,
-                in_channels=128,
+                in_channels=64,
                 out_channels=64,
                 kernel_size=7,
                 frequencies=None,
@@ -209,8 +221,18 @@ class Decoder(nn.Module):
         # perform first residual layer
         # TODO: move this to OrientedPowermap
         x = self.first_upsample(x)
+        first_bypass = torch.clone(x)
         for _ in range(3):
             x = self.first_residual(x)
+        x = 0.5 * (x + first_bypass)
+        x = self.first_conv1(x)
+
+        x = self.second_upsample(x)
+        second_bypass = torch.clone(x)
+        for _ in range(6):
+            x = self.second_residual(x)
+        x = 0.5 * (x + second_bypass)
+        x = self.second_conv1(x)
 
         x_v4_back = self.residual_blocks(x)
 
