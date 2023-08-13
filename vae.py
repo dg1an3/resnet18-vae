@@ -268,12 +268,12 @@ class VAE(nn.Module):
 
         eps = 0.0
 
-        shear_factor = 1e-4
+        shear_factor = 1e-5
         shear = shear_factor * fc_xform_out[:, 5]
         shear = shear.view(-1, 1)
         # shear = torch.clamp(shear, -eps, eps)
 
-        scale_factor = 1e-4
+        scale_factor = 1e-5
         scale_x, scale_y = (
             torch.sigmoid(scale_factor * fc_xform_out[:, 3]) + 0.6,
             torch.sigmoid(scale_factor * fc_xform_out[:, 4]) + 0.6,
@@ -284,13 +284,13 @@ class VAE(nn.Module):
         angle = fc_xform_out[:, 2]
         # angle = torch.clamp(angle, -eps, eps)
 
-        angle_factor = 1e-4
+        angle_factor = 1e-5
         sa = torch.sin(angle_factor * angle).view(-1, 1)
         ca = torch.cos(angle_factor * angle).view(-1, 1)
         # print(f"ca = {ca}")
         # print(f"sa = {sa}")
 
-        xlate_factor = 1e-4
+        xlate_factor = 1e-5
         x_shift = xlate_factor * fc_xform_out[:, 0]
         x_shift = x_shift.view(-1, 1)
         # x_shift = torch.clamp(x_shift, -eps, eps)
@@ -344,7 +344,7 @@ class VAE(nn.Module):
 
         # clamp a subset of latent dimensions
         # TODO: make this a settable attribute
-        init_dims = 68
+        init_dims = 11
         z = torch.clamp(
             z,
             torch.tensor(
@@ -515,7 +515,7 @@ def train_vae(device, train_stn=False, l1_weight=0.9):
         optimizer.zero_grad()
 
         result_dict = model.forward_dict(x)
-        result_dict["x_v1"] = None
+        #result_dict["x_v1"] = None
         result_dict["x_v2"] = None
         result_dict["x_v4"] = None
         # result_dict = clamp_01(result_dict)
