@@ -50,6 +50,7 @@ class Decoder(nn.Module):
             out_channels=256,
             kernel_size=7,
             frequencies=None,
+            directions=9,
             out_res=None,  # TODO: move this to before OPM
         )
         self.first_conv1 = nn.Conv2d(kernel_size=1, in_channels=256, out_channels=128)
