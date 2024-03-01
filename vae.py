@@ -268,15 +268,15 @@ class VAE(nn.Module):
 
         eps = 0.0
 
-        shear_factor = 1e-5
+        shear_factor = 9e-2
         shear = shear_factor * fc_xform_out[:, 5]
         shear = shear.view(-1, 1)
         # shear = torch.clamp(shear, -eps, eps)
 
-        scale_factor = 1e-5
+        scale_factor = 1e-1
         scale_x, scale_y = (
-            torch.sigmoid(scale_factor * fc_xform_out[:, 3]) + 0.6,
-            torch.sigmoid(scale_factor * fc_xform_out[:, 4]) + 0.6,
+            torch.sigmoid(scale_factor * fc_xform_out[:, 3]) + 0.5,
+            torch.sigmoid(scale_factor * fc_xform_out[:, 4]) + 0.5,
         )
         scale_x = scale_x.view(-1, 1)
         scale_y = scale_y.view(-1, 1)
@@ -284,13 +284,13 @@ class VAE(nn.Module):
         angle = fc_xform_out[:, 2]
         # angle = torch.clamp(angle, -eps, eps)
 
-        angle_factor = 1e-5
+        angle_factor = 1e-2
         sa = torch.sin(angle_factor * angle).view(-1, 1)
         ca = torch.cos(angle_factor * angle).view(-1, 1)
         # print(f"ca = {ca}")
         # print(f"sa = {sa}")
 
-        xlate_factor = 1e-5
+        xlate_factor = 2e-1
         x_shift = xlate_factor * fc_xform_out[:, 0]
         x_shift = x_shift.view(-1, 1)
         # x_shift = torch.clamp(x_shift, -eps, eps)
@@ -335,7 +335,7 @@ class VAE(nn.Module):
             dictionary: dictionary of result tensors
         """
         x_stn = self.stn(x)
-
+        x_stn = x
         # encode the input, returning the gaussian parameters
         result_encoder = self.encoder.forward_dict(x_stn)
 
@@ -476,7 +476,7 @@ def train_vae(device, train_stn=False, l1_weight=0.9):
 
     train_dataset = Cxr8Dataset(
         root_path,
-        sz=256,
+        sz=512,
         transform=transforms.Compose(
             [
                 transforms.ToTensor(),
@@ -487,7 +487,7 @@ def train_vae(device, train_stn=False, l1_weight=0.9):
     input_size = train_dataset[0]["image"].shape
     logging.info(f"input_size = {input_size}")
 
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
     logging.info(f"train_dataset length = {len(train_dataset)}")
 
     model, optimizer, start_epoch = load_model(
@@ -515,7 +515,7 @@ def train_vae(device, train_stn=False, l1_weight=0.9):
         optimizer.zero_grad()
 
         result_dict = model.forward_dict(x)
-        #result_dict["x_v1"] = None
+        result_dict["x_v1"] = None
         result_dict["x_v2"] = None
         result_dict["x_v4"] = None
         # result_dict = clamp_01(result_dict)
