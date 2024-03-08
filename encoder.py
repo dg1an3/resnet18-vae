@@ -168,7 +168,7 @@ class Encoder(nn.Module):
 
         # self.freq_per_kernel = self.oriented_powermap.freq_per_kernel
         self.in_planes = self.oriented_powermap_3.out_channels
-
+    
         self.residual_blocks = nn.Sequential(
             # 64x64
             OrientedPowerMap(

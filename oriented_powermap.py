@@ -12,6 +12,7 @@ import torch.nn as nn
 
 # TODO: insert filter_utils here, and include unit tests
 from filter_utils import make_oriented_map, make_oriented_map_stack_phases
+from squeeze_excitation import SqueezeExcitation
 
 
 class OrientedPowerMap(nn.Module):
@@ -100,11 +101,17 @@ class OrientedPowerMap(nn.Module):
         )
         conv_1.weight = torch.nn.Parameter(kernels, requires_grad=False)
 
+        self.se = SqueezeExcitation(
+            input_channels=kernel_count,
+            squeeze_channels=kernel_count // 8,
+        )
+
         self.conv_2 = nn.Conv2d(
             in_channels=kernel_count,
             out_channels=kernel_count // 2 if out_channels is None else out_channels,
             kernel_size=1,
         )
+
         # TODO: better initialization?
         torch.nn.init.normal_(self.conv_2.weight, 0.0, 1e-1)
         torch.nn.init.normal_(self.conv_2.bias, 0.0, 1e-1)
@@ -125,6 +132,7 @@ class OrientedPowerMap(nn.Module):
             # nn.BatchNorm2d(kernel_count),
             nn.ReLU(True),
             change_res,
+            self.se,
             self.conv_2,
             nn.ReLU(True),
         )

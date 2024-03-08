@@ -335,7 +335,7 @@ class VAE(nn.Module):
             dictionary: dictionary of result tensors
         """
         x_stn = self.stn(x)
-        x_stn = x
+        # x_stn = x
         # encode the input, returning the gaussian parameters
         result_encoder = self.encoder.forward_dict(x_stn)
 
@@ -400,7 +400,7 @@ def load_model(
     device,
     kernel_size=11,  # TODO: ensure these are all hooked up
     directions=5,
-    latent_dim=96,
+    latent_dim=32*32,
     train_stn=False,
 ):
     """_summary_
@@ -428,7 +428,7 @@ def load_model(
     )
     model = model.to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=5e-4 )
     # optimizer = optim.SGD(model.parameters(), lr=1e-1)
     if len(epoch_files) > 0:
         dct = torch.load(epoch_files[-1], map_location=device)
@@ -476,7 +476,7 @@ def train_vae(device, train_stn=False, l1_weight=0.9):
 
     train_dataset = Cxr8Dataset(
         root_path,
-        sz=512,
+        sz=768,
         transform=transforms.Compose(
             [
                 transforms.ToTensor(),
@@ -487,7 +487,7 @@ def train_vae(device, train_stn=False, l1_weight=0.9):
     input_size = train_dataset[0]["image"].shape
     logging.info(f"input_size = {input_size}")
 
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=7, shuffle=True)
     logging.info(f"train_dataset length = {len(train_dataset)}")
 
     model, optimizer, start_epoch = load_model(
@@ -495,7 +495,7 @@ def train_vae(device, train_stn=False, l1_weight=0.9):
         device,
         kernel_size=9,
         directions=7,
-        latent_dim=96,
+        latent_dim=16*16,
         train_stn=train_stn,
     )
     logging.info(set([p.device for p in model.parameters()]))
@@ -515,8 +515,8 @@ def train_vae(device, train_stn=False, l1_weight=0.9):
         optimizer.zero_grad()
 
         result_dict = model.forward_dict(x)
-        result_dict["x_v1"] = None
-        result_dict["x_v2"] = None
+        # result_dict["x_v1"] = None
+        # result_dict["x_v2"] = None
         result_dict["x_v4"] = None
         # result_dict = clamp_01(result_dict)
 
@@ -539,7 +539,7 @@ def train_vae(device, train_stn=False, l1_weight=0.9):
         train_count += 1.0 if train_count != -1.0 else 2.0
         train_loss = loss.item() + (train_loss if train_count > 0.0 else 0.0)
 
-        if train_count % 6 == 5:
+        if train_count % 3 == 2:
             x_xform = model.stn(x)
 
             plot_samples(
@@ -650,7 +650,7 @@ if "__main__" == __name__:
         # train_vae(device, train_stn=True, train_non_stn=True, l1_weight=0.7)
         for _ in range(3):
             for l1_weight in [0.7, 0.9]: # 0.7, 0.9]:
-                for train_stn in [True, False]:
+                for train_stn in [True, True]:
                     train_vae(
                         device,
                         train_stn=train_stn,
